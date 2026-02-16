@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: trading-bot-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_bot}
+
+    ports:
+      # Expose on localhost:5432 for external connections (optional)
+      - "5432:5432"
+
+    volumes:
+      # Persist database data
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: Initialize database with SQL script
+      # - ../alembic/versions:/docker-entrypoint-initdb.d
+
+    # Health check - verify database is ready
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    # Keep container running
+    restart: unless-stopped
+
+    networks:
+      - trading-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Trading Bot Application
+  trading-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: trading-bot
+    env_file: .env
+
+    # Wait for PostgreSQL to be healthy before starting
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # API Credentials (set via .env or environment)
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      COINBASE_API_KEY: ${COINBASE_API_KEY:-}
+      COINBASE_SECRET_KEY: ${COINBASE_SECRET_KEY:-}
+      COINBASE_PASSPHRASE: ${COINBASE_PASSPHRASE:-}
+
+      # Trading Configuration
+      TRADING_ENV: ${TRADING_ENV:-paper}
+      BROKER: ${BROKER:-alpaca}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-/app/logs/trading_bot.log}
+
+      # Strategy Configuration
+      STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-config/strategies.yaml}
+      CONFIG_FILE_PATH: ${CONFIG_FILE_PATH:-config/config.yml}
+
+      # Risk Management
+      MAX_POSITION_SIZE: ${MAX_POSITION_SIZE:-0.1}
+      MAX_PORTFOLIO_RISK: ${MAX_PORTFOLIO_RISK:-0.02}
+
+      # Database Configuration
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/trading_bot}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-20}
+
+      # Telegram Bot Configuration (optional)
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+    volumes:
+      # Mount logs directory for external access
+      - ./logs:/app/logs
+      # Mount config files for easy editing
+      - ../config:/app/config
+      # Optional: Mount entire src for development
+      # - ../src:/app/src
+
+    # Keep container running even if process exits
+    restart: unless-stopped
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - trading-network
+
+volumes:
+  # Named volume for PostgreSQL data persistence
+  postgres_data:
+    driver: local
+
+networks:
+  trading-network:
+    driver: bridge

@@ -1,0 +1,132 @@
+# Trading Bot Configuration File
+#
+# Environment variables have precedence over settings in this file.
+# For example, if both CONFIG_FILE and TRADING_ENV are set,
+# the TRADING_ENV environment variable will be used.
+#
+# Configuration sections:
+
+app:
+  # ============================================================================
+  # BROKER-SPECIFIC CREDENTIALS
+  # ============================================================================
+  # ALPACA (Stocks, Options, Crypto, Forex)
+  # Set via environment variables: ALPACA_API_KEY, ALPACA_SECRET_KEY
+  # alpaca_api_key: your_alpaca_api_key
+  # alpaca_secret_key: your_alpaca_secret_key
+
+  # COINBASE (Crypto only)
+  # Set via environment variables: COINBASE_API_KEY, COINBASE_SECRET_KEY, COINBASE_PASSPHRASE
+  # coinbase_api_key: your_coinbase_api_key
+  # coinbase_secret_key: your_coinbase_secret_key
+  # coinbase_passphrase: your_coinbase_passphrase
+
+  # ============================================================================
+  # TRADING ENVIRONMENT
+  # ============================================================================
+  # Options: 'paper' (no real money) or 'live' (real money - CAUTION)
+  # Environment variable: TRADING_ENV
+  trading_environment: paper
+
+  # ============================================================================
+  # BROKER SELECTION
+  # ============================================================================
+  # Supported brokers:
+  #   - alpaca: Stocks, options, crypto, forex (supports paper & live)
+  #   - coinbase: Crypto only (supports live trading)
+  # Environment variable: BROKER
+  broker: alpaca
+
+  # ============================================================================
+  # LOGGING
+  # ============================================================================
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # Environment variable: LOG_LEVEL
+  log_level: INFO
+
+  # Log file path (leave empty for console only)
+  # Environment variable: LOG_FILE
+  log_file: logs/trading_bot.log
+
+  # ============================================================================
+  # STRATEGY CONFIGURATION
+  # ============================================================================
+  # Path to YAML file with strategy definitions
+  # Environment variable: STRATEGY_CONFIG_PATH
+  strategy_config_path: config/strategies.yaml
+
+  # ============================================================================
+  # RISK MANAGEMENT
+  # ============================================================================
+  # Maximum position size as percentage of portfolio (0.0 - 1.0)
+  # Example: 0.1 means no single position should exceed 10% of portfolio
+  # Environment variable: MAX_POSITION_SIZE
+  max_position_size: 0.1
+
+  # Maximum portfolio risk as percentage (0.0 - 1.0)
+  # Example: 0.02 means limit daily loss to 2% of portfolio value
+  # Environment variable: MAX_PORTFOLIO_RISK
+  max_portfolio_risk: 0.02
+
+# ============================================================================
+# STRATEGY-SPECIFIC CONFIGURATIONS
+# ============================================================================
+# These are optional and can be extended for specific strategies
+strategies:
+  mean_reversion:
+    enabled: true
+    lookback_window: 20
+    std_dev_multiplier: 2
+
+  momentum:
+    enabled: false
+    lookback_period: 14
+    threshold: 0.02
+
+  eur_usd:
+    enabled: true
+    lookback_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    min_daily_range: 0.005  # Minimum 0.5% daily range to trade
+
+# ============================================================================
+# DATA PROVIDER CONFIGURATIONS
+# ============================================================================
+data:
+  provider: alpaca
+  # Historical data lookback in days
+  historical_lookback: 60
+  # Bar timeframe for analysis
+  timeframe: 1h
+  # Update frequency in seconds
+  update_interval: 60
+
+# ============================================================================
+# PORTFOLIO CONFIGURATIONS
+# ============================================================================
+portfolio:
+  # Initial account balance (for tracking)
+  initial_balance: 100000
+  # Target account balance
+  target_balance: 150000
+  # Maximum daily drawdown percentage
+  max_daily_drawdown: 0.05  # 5%
+  # Maximum number of open positions
+  max_open_positions: 5
+
+# ============================================================================
+# MONITORING & ALERTS
+# ============================================================================
+monitoring:
+  enabled: true
+  # Log trade details
+  log_trades: true
+  # Log performance metrics every N trades
+  metrics_interval: 10
+  # Alert thresholds
+  alerts:
+    # Alert if daily loss exceeds this percentage
+    max_daily_loss_percent: 5
+    # Alert if portfolio value drops below this percentage
+    min_portfolio_value_percent: 90

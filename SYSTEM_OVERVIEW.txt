@@ -1,0 +1,220 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                       TRADING BOT - SYSTEM OVERVIEW                          ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            USER EXPERIENCE                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   👨 Developer (You)              👨‍💼 Father (Investor)                       │
+│   ├─ Monitor logs                 ├─ Telegram /status                       │
+│   ├─ Check database               ├─ Telegram /trades                       │
+│   ├─ Deploy updates               ├─ Telegram /metrics                      │
+│   └─ Manage configuration          ├─ Get trade alerts                       │
+│                                    └─ Control bot (/pause, /resume)        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        APPLICATION LAYER                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                  Trading Bot (src/main.py)                          │    │
+│  │                                                                      │    │
+│  │  • Strategy Execution (4 built-in strategies)                       │    │
+│  │  • Portfolio Management (position sizing, risk limits)              │    │
+│  │  • Order Management (execution, tracking)                           │    │
+│  │  • Data Processing (1-minute bars)                                 │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                    ↑                                         │
+│                 ┌──────────────────┼──────────────────┐                      │
+│                 │                  │                  │                      │
+│      ┌──────────▼─────────┐   ┌────▼────────┐   ┌────▼──────────────────┐   │
+│      │ Strategy Framework │   │ Broker APIs │   │  Data Provider       │   │
+│      │ (Base + Plugins)   │   │             │   │                      │   │
+│      │                    │   │ • Alpaca    │   │ • Alpaca Data        │   │
+│      │ • RSI-ATR Trend    │   │ • Coinbase  │   │ • 1-minute bars      │   │
+│      │ • Momentum         │   │             │   │ • Real-time quotes   │   │
+│      │ • Mean Reversion   │   │ Paper/Live  │   │                      │   │
+│      │ • Buy & Hold       │   │             │   │ • WebSocket support  │   │
+│      │                    │   └─────────────┘   └──────────────────────┘   │
+│      │ Extensible         │                                                 │
+│      │ (Add more)         │                                                 │
+│      └────────────────────┘                                                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       PERSISTENCE LAYER                                      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │           Database (PostgreSQL 15)                                  │     │
+│  │                                                                      │     │
+│  │  ┌──────────────────────────────────────────────────────────────┐  │     │
+│  │  │                 Trade Repository                             │  │     │
+│  │  │  • record_trade_entry()     → INSERT                        │  │     │
+│  │  │  • record_trade_exit()      → UPDATE + Calculate P&L        │  │     │
+│  │  │  • get_trades_by_symbol()   → Query by asset               │  │     │
+│  │  │  • get_performance_metrics() → Analytics                    │  │     │
+│  │  │  • get_open_positions()     → Current positions            │  │     │
+│  │  │  • record_position()        → Position tracking            │  │     │
+│  │  └──────────────────────────────────────────────────────────────┘  │     │
+│  │                                                                      │     │
+│  │  ┌──────────────────────────────────────────────────────────────┐  │     │
+│  │  │               Health Check Manager                           │  │     │
+│  │  │  • Track connection status                                  │  │     │
+│  │  │  • Detect stale data (>5 min)                              │  │     │
+│  │  │  • Count connection errors                                 │  │     │
+│  │  │  • Auto-reconnect (exponential backoff)                    │  │     │
+│  │  │  • Persist health status every 5 minutes                   │  │     │
+│  │  └──────────────────────────────────────────────────────────────┘  │     │
+│  │                                                                      │     │
+│  │  Schema:                                                             │     │
+│  │  • trades (23 columns)       → Entry/exit records               │     │
+│  │  • positions (15 columns)    → Current open positions           │     │
+│  │  • performance_metrics       → Daily/hourly snapshots           │     │
+│  │  • trading_events           → Event logging                     │     │
+│  │  • health_checks            → System health monitoring          │     │
+│  │                                                                      │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     NOTIFICATION LAYER                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │              Telegram Bot Interface                                 │     │
+│  │                                                                      │     │
+│  │  Commands (Interactive):                                            │     │
+│  │  ├─ /status       → Show bot status & portfolio                     │     │
+│  │  ├─ /trades       → View recent trades                              │     │
+│  │  ├─ /metrics      → Performance metrics                             │     │
+│  │  ├─ /pause        → Stop trading                                    │     │
+│  │  ├─ /resume       → Resume trading                                  │     │
+│  │  └─ /help         → Show commands                                   │     │
+│  │                                                                      │     │
+│  │  Alerts (Automatic):                                                │     │
+│  │  ├─ 📈 Trade Executed (symbol, price, quantity, P&L)               │     │
+│  │  ├─ 🚨 Connection Error (with timestamp)                           │     │
+│  │  ├─ 🟢 Health Check (status, error count)                          │     │
+│  │  ├─ 🤖 Bot Started (environment, broker)                           │     │
+│  │  └─ 🛑 Bot Stopped (shutdown time)                                 │     │
+│  │                                                                      │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      DEPLOYMENT LAYER                                        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │            Docker Compose Orchestration                             │     │
+│  │                                                                      │     │
+│  │  Services:                                                           │     │
+│  │  ┌──────────────────┐  ┌──────────────────┐                         │     │
+│  │  │ trading-bot      │  │ postgres         │                         │     │
+│  │  │ (Container)      │  │ (Database)       │                         │     │
+│  │  │                  │  │                  │                         │     │
+│  │  │ Image: Built     │  │ Image: postgres  │                         │     │
+│  │  │ from Dockerfile  │  │        :15       │                         │     │
+│  │  │                  │  │                  │                         │     │
+│  │  │ CPU: 1 core      │  │ CPU: 0.5 core    │                         │     │
+│  │  │ Memory: 512MB    │  │ Memory: 256MB    │                         │     │
+│  │  │ Restart: unless  │  │ Restart: unless  │                         │     │
+│  │  │          stopped │  │          stopped │                         │     │
+│  │  │                  │  │ Health check:    │                         │     │
+│  │  │ Volumes:         │  │ pg_isready       │                         │     │
+│  │  │ • logs           │  │                  │                         │     │
+│  │  │ • config         │  │ Volume:          │                         │     │
+│  │  │                  │  │ postgres_data    │                         │     │
+│  │  │ Network:         │  │                  │                         │     │
+│  │  │ trading-network  │  │ Network:         │                         │     │
+│  │  │                  │  │ trading-network  │                         │     │
+│  │  └──────────────────┘  └──────────────────┘                         │     │
+│  │           ↓                     ↓                                    │     │
+│  │      (depends_on)      (service_healthy)                            │     │
+│  │                                                                      │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      DATA FLOW EXAMPLE                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Bar Arrives                                                              │
+│     Data Provider → 📊 (SPY, price=$450, volume=1M)                         │
+│                                                                              │
+│  2. Strategy Analyzes                                                        │
+│     RSI-ATR → 📈 (RSI=35, ATR=$2.5) → BUY signal generated                 │
+│                                                                              │
+│  3. Order Executes                                                           │
+│     Portfolio Manager → 🎯 (quantity=1, order_id=123)                       │
+│                                                                              │
+│  4. Trade Recorded                                                           │
+│     TradeRepository → 💾 (INSERT INTO trades)                               │
+│                                                                              │
+│  5. Alert Sent                                                               │
+│     Telegram Bot → 📱 (Send trade alert to father)                          │
+│                                                                              │
+│  6. Health Updated                                                           │
+│     HealthCheckManager → 🟢 (order_submitted=true)                          │
+│                                                                              │
+│  7. Everything Logged                                                        │
+│     Database & Logs → 📝 (timestamp, symbol, strategy, etc.)                │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     DEPLOYMENT WORKFLOW                                      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Development                    Paper Trading              Live Trading      │
+│  ─────────────────────────────────────────────────────────────────────      │
+│                                                                              │
+│  Setup                          Run                        Go Live            │
+│  ├─ .env (paper keys)   →       ├─ Monitor /status  →     ├─ .env (live)    │
+│  ├─ strategies.yaml             ├─ Check /trades          ├─ Reduce size    │
+│  └─ Start bot                   ├─ Review /metrics        ├─ 1/10 position  │
+│                                 ├─ 2 weeks minimum        └─ Scale slowly   │
+│   Decisions:                    └─ Win rate >50%?                           │
+│   ├─ Which broker?              → Profit factor >1.5?   Ongoing:            │
+│   ├─ Which strategies?          → No errors?            ├─ Daily checks     │
+│   └─ Which symbols?             → Go live!              ├─ Weekly reports   │
+│                                                         └─ Monthly review   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        TECH STACK SUMMARY                                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Language:      Python 3.8+      (asyncio for async/await)                 │
+│  Database:      PostgreSQL 15    (psycopg3 driver)                         │
+│  Migrations:    Alembic 1.12+    (Version control for schema)              │
+│  Brokers:       alpaca-py        (Stocks, crypto, forex, options)         │
+│                 coinbase-py      (Crypto only)                            │
+│  Monitoring:    python-telegram-bot 21.0+  (Real-time alerts)             │
+│  Config:        Pydantic 2.0+    (Type-safe settings)                     │
+│  Deployment:    Docker 20+       (Containerization)                       │
+│  Orchestration: Docker Compose   (Multi-container management)             │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                    STATUS: ✅ PRODUCTION READY                             ║
+║                                                                              ║
+║  Multi-broker support ✅  | Real-time monitoring ✅  | Database persistence ✅  │
+║  Health checks ✅  | Docker deployment ✅  | Comprehensive docs ✅              │
+║                                                                              ║
+║                 Ready for paper testing → live trading                      ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝

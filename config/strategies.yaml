@@ -1,0 +1,127 @@
+strategies:
+  # Buy and hold strategy - simple example
+  - name: "buy_hold_spy"
+    class: "BuyAndHoldStrategy"
+    enabled: false
+    symbols:
+      - "SPY"
+    parameters:
+      quantity: 10
+
+  # Mean reversion strategy using Bollinger Bands
+  - name: "mean_reversion_spy"
+    class: "MeanReversionStrategy"
+    enabled: false
+    symbols:
+      - "SPY"
+    parameters:
+      window: 20
+      num_std: 2
+      position_size: 10
+
+  # Momentum strategy
+  - name: "momentum_qqq"
+    class: "MomentumStrategy"
+    enabled: false
+    symbols:
+      - "QQQ"
+    parameters:
+      lookback_period: 14
+      momentum_threshold: 0.02
+      position_size: 5
+
+  # RSI + ATR + EMA Trend Following Strategy (Generic - works on any asset)
+  # Asset-agnostic strategy that can be used for:
+  # - Forex: EUR/USD, GBP/USD, etc.
+  # - Stocks: SPY, QQQ, etc.
+  # - Crypto: BTC/USD, ETH/USD, etc.
+  # Designed for H1 (1-hour), H4 (4-hour), or daily timeframes
+  - name: "rsi_atr_trend_spy"
+    class: "RSIATRTrendStrategy"
+    enabled: true
+    symbols:
+      - "SPY"  # Stock symbol (works with Alpaca paper trading)
+      # For forex/crypto, need live Alpaca account:
+      # - "EUR/USD"    # Requires live account
+      # - "BTC/USD"    # Requires live account
+      # - "GBP/USD"    # Requires live account
+    parameters:
+      # RSI Configuration
+      rsi_period: 14
+      rsi_oversold: 30
+      rsi_overbought: 70
+
+      # ATR Configuration
+      atr_period: 14
+      atr_multiplier: 1.5
+
+      # Moving Average Configuration
+      ema_fast_period: 9
+      ema_slow_period: 21
+
+      # Risk Management
+      position_size: 10  # Share quantity (adjust per asset)
+      risk_reward_ratio: 2.0  # Risk 1 to win 2
+      max_daily_loss_pips: 100
+
+      # Trading Control
+      signal_cooldown_bars: 3  # Prevent over-trading
+
+    # ===== FILTERS: Volatility & Liquidity =====
+    # Only trade if market conditions are suitable
+    filters:
+      # Liquidity Filter: Skip bars with low volume
+      # Stocks: 1M+ shares, Forex: 500k units, Crypto: 100k+
+      min_volume: 1000000  # Minimum shares traded in the bar (for SPY)
+
+      # Volatility Filters: Only trade in sweet spot
+      # Too calm (low ATR): not enough movement to profit
+      # Too volatile (high ATR): too risky with wide stops
+      min_atr: 0.5   # Minimum volatility (ATR in dollars for stocks)
+      max_atr: 5.0   # Maximum volatility (avoid extreme volatility)
+
+  # Example: Same strategy, STOCKS (SPY)
+  # - name: "rsi_atr_trend_spy"
+  #   class: "RSIATRTrendStrategy"
+  #   enabled: false
+  #   symbols:
+  #     - "SPY"
+  #   parameters:
+  #     rsi_period: 14
+  #     rsi_oversold: 30
+  #     rsi_overbought: 70
+  #     atr_period: 14
+  #     atr_multiplier: 1.5
+  #     ema_fast_period: 9
+  #     ema_slow_period: 21
+  #     position_size: 50  # Shares (different unit than forex)
+  #     risk_reward_ratio: 2.0
+  #     max_daily_loss_pips: 100
+  #     signal_cooldown_bars: 3
+  #   filters:
+  #     min_volume: 1000000  # Stocks need higher volume
+  #     min_atr: 0.5         # ATR in dollars for stocks (e.g., 50 cents)
+  #     max_atr: 5.0         # Avoid huge volatility
+
+  # Example: Same strategy, CRYPTO (BTC/USD)
+  # - name: "rsi_atr_trend_btc"
+  #   class: "RSIATRTrendStrategy"
+  #   enabled: false
+  #   symbols:
+  #     - "BTC/USD"
+  #   parameters:
+  #     rsi_period: 14
+  #     rsi_oversold: 30
+  #     rsi_overbought: 70
+  #     atr_period: 14
+  #     atr_multiplier: 1.5
+  #     ema_fast_period: 9
+  #     ema_slow_period: 21
+  #     position_size: 0.05  # Bitcoin units (different)
+  #     risk_reward_ratio: 2.0
+  #     max_daily_loss_pips: 100
+  #     signal_cooldown_bars: 3
+  #   filters:
+  #     min_volume: 100000   # Crypto lower volume requirement
+  #     min_atr: 100         # Bitcoin ATR in dollars
+  #     max_atr: 2000        # Crypto is volatile
