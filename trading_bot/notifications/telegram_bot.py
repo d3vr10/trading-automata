@@ -333,15 +333,16 @@ Database not configured - cannot retrieve uptime.
             conn = await psycopg.AsyncConnection.connect(self.database_url)
 
             # Get latest bot session start time
-            result = await conn.execute(
-                """
-                SELECT started_at
-                FROM bot_sessions
-                ORDER BY started_at DESC
-                LIMIT 1
-                """
-            )
-            row = await result.fetchone()
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT started_at
+                    FROM bot_sessions
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """
+                )
+                row = await cur.fetchone()
             await conn.close()
 
             if row and row[0]:

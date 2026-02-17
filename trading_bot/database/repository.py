@@ -54,7 +54,7 @@ class TradeRepository:
                 symbol, strategy, broker, entry_timestamp,
                 entry_price, entry_quantity, entry_order_id, notes
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
 
@@ -100,15 +100,15 @@ class TradeRepository:
         query = """
             UPDATE trades
             SET
-                exit_timestamp = $1,
-                exit_price = $2,
-                exit_quantity = $3,
-                exit_order_id = $4,
-                gross_pnl = ($5 - $6) * $3,
-                pnl_percent = (($5 - $6) / $6) * 100,
-                is_winning_trade = ($5 > $6),
-                hold_duration_seconds = EXTRACT(EPOCH FROM ($1 - entry_timestamp))::INTEGER
-            WHERE id = $7
+                exit_timestamp = %s,
+                exit_price = %s,
+                exit_quantity = %s,
+                exit_order_id = %s,
+                gross_pnl = (%s - %s) * %s,
+                pnl_percent = ((%s - %s) / %s) * 100,
+                is_winning_trade = (%s > %s),
+                hold_duration_seconds = EXTRACT(EPOCH FROM (%s - entry_timestamp))::INTEGER
+            WHERE id = %s
         """
 
         try:
@@ -154,10 +154,10 @@ class TradeRepository:
                 gross_pnl, pnl_percent, is_winning_trade,
                 hold_duration_seconds
             FROM trades
-            WHERE symbol = $1
-              AND entry_timestamp > NOW() - INTERVAL '1 day' * $2
+            WHERE symbol = %s
+              AND entry_timestamp > NOW() - INTERVAL '1 day' * %s
             ORDER BY entry_timestamp DESC
-            LIMIT $3
+            LIMIT %s
         """
 
         try:
@@ -192,10 +192,10 @@ class TradeRepository:
                 exit_timestamp, exit_price, exit_quantity,
                 gross_pnl, pnl_percent, is_winning_trade
             FROM trades
-            WHERE strategy = $1
-              AND entry_timestamp > NOW() - INTERVAL '1 day' * $2
+            WHERE strategy = %s
+              AND entry_timestamp > NOW() - INTERVAL '1 day' * %s
             ORDER BY entry_timestamp DESC
-            LIMIT $3
+            LIMIT %s
         """
 
         try:
@@ -284,7 +284,7 @@ class TradeRepository:
         params = []
 
         if strategy:
-            where_clause += " AND strategy = $1"
+            where_clause += " AND strategy = %s"
             params = [strategy]
 
         query = f"""
@@ -336,7 +336,7 @@ class TradeRepository:
                 symbol, strategy, broker, quantity, entry_price,
                 stop_loss, take_profit, is_open
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, true)
             RETURNING id
         """
 
@@ -373,9 +373,9 @@ class TradeRepository:
             UPDATE positions
             SET
                 is_open = false,
-                realized_pnl = $1,
+                realized_pnl = %s,
                 closed_at = NOW()
-            WHERE id = $2
+            WHERE id = %s
         """
 
         try:

@@ -303,8 +303,8 @@ class TradingBot:
                 VALUES (%s, %s)
             """
             session_id = self.start_time.timestamp()  # Use timestamp as unique session ID
-            await self.db_conn.execute(query, (session_id, self.start_time))
-            await self.db_conn.commit()
+            async with self.db_conn.cursor() as cur:
+                await cur.execute(query, (session_id, self.start_time))
             logger.debug(f"Session started at {self.start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         except Exception as e:
             logger.warning(f"Failed to record session start: {e}")

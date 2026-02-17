@@ -131,19 +131,24 @@ def trades(limit, symbol, strategy, watch):
 
             if not symbol:
                 # Get all trades (fallback if method doesn't support all)
-                result = await conn.execute(
-                    f"""
+                query = """
                     SELECT id, symbol, strategy, broker, entry_price, entry_quantity,
                            exit_price, exit_quantity, pnl_percent, entry_timestamp, exit_timestamp
                     FROM trades
                     WHERE 1=1
-                    {f"AND symbol = ${1}" if symbol else ""}
-                    {f"AND strategy = ${1}" if strategy and not symbol else ""}
-                    ORDER BY entry_timestamp DESC
-                    LIMIT {limit}
-                    """
-                )
-                trades_list = await result.fetchall()
+                """
+                params = []
+                if symbol:
+                    query += " AND symbol = %s"
+                    params.append(symbol)
+                if strategy and not symbol:
+                    query += " AND strategy = %s"
+                    params.append(strategy)
+                query += f" ORDER BY entry_timestamp DESC LIMIT {limit}"
+
+                async with conn.cursor() as cur:
+                    await cur.execute(query, tuple(params) if params else ())
+                    trades_list = await cur.fetchall()
             else:
                 trades_list = all_trades[:limit]
 

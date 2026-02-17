@@ -167,19 +167,19 @@ class HealthCheckManager:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
 
-            await self.conn.execute(
-                query,
-                (
-                    self.broker,
-                    self.strategy,
-                    self.is_healthy,
-                    self.last_bar_timestamp,
-                    self.last_order_timestamp,
-                    self.connection_errors,
-                    datetime.utcnow()
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    query,
+                    (
+                        self.broker,
+                        self.strategy,
+                        self.is_healthy,
+                        self.last_bar_timestamp,
+                        self.last_order_timestamp,
+                        self.connection_errors,
+                        datetime.utcnow()
+                    )
                 )
-            )
-            await self.conn.commit()
 
             logger.debug(
                 f"Health check saved - is_healthy: {self.is_healthy}, "
