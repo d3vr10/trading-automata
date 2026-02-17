@@ -10,9 +10,10 @@ Provides commands to check:
 
 import asyncio
 import sys
+import time
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Callable
 
 import click
 import psycopg
@@ -51,6 +52,29 @@ async def get_db_connection():
         sys.exit(1)
 
 
+def watch_command(async_fn: Callable, watch: bool, interval: int = 2):
+    """Helper to run a command with optional watch mode.
+
+    Args:
+        async_fn: Async function to run
+        watch: Whether to enable watch mode
+        interval: Refresh interval in seconds (default 2)
+    """
+    if not watch:
+        asyncio.run(async_fn())
+    else:
+        try:
+            while True:
+                # Clear screen
+                click.clear()
+                asyncio.run(async_fn())
+                click.echo(colored(f"\n(Watching... press Ctrl+C to stop, refreshing every {interval}s)", Colors.CYAN))
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            click.echo(colored("\nWatch mode stopped.", Colors.YELLOW))
+            sys.exit(0)
+
+
 @click.group()
 def cli():
     """Trading Bot CLI - Check bot data and status."""
@@ -60,38 +84,43 @@ def cli():
 @cli.command()
 @click.option('--format', type=click.Choice(['table', 'json']), default='table',
               help='Output format')
-def status(format):
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def status(format, watch):
     """Check overall bot status."""
-    settings = load_settings()
+    async def _status():
+        settings = load_settings()
 
-    click.echo(f"\n{colored('🤖 Trading Bot Status', Colors.BOLD)}")
-    click.echo(colored('=' * 50, Colors.CYAN))
+        click.echo(f"\n{colored('🤖 Trading Bot Status', Colors.BOLD)}")
+        click.echo(colored('=' * 50, Colors.CYAN))
 
-    status_info = [
-        ['Configuration', ''],
-        ['Broker', colored(settings.broker.upper(), Colors.GREEN)],
-        ['Environment', colored(settings.trading_environment.upper(), Colors.GREEN)],
-        ['Log Level', settings.log_level],
-        ['Strategy Config', settings.strategy_config_path],
-        ['', ''],
-        ['Risk Management', ''],
-        ['Max Position Size', f"{settings.max_position_size * 100:.1f}%"],
-        ['Max Portfolio Risk', f"{settings.max_portfolio_risk * 100:.1f}%"],
-        ['', ''],
-        ['Database', ''],
-        ['Database URL', settings.database_url.split('@')[1] if '@' in settings.database_url else 'N/A'],
-        ['Pool Size', str(settings.database_pool_size)],
-    ]
+        status_info = [
+            ['Configuration', ''],
+            ['Broker', colored(settings.broker.upper(), Colors.GREEN)],
+            ['Environment', colored(settings.trading_environment.upper(), Colors.GREEN)],
+            ['Log Level', settings.log_level],
+            ['Strategy Config', settings.strategy_config_path],
+            ['', ''],
+            ['Risk Management', ''],
+            ['Max Position Size', f"{settings.max_position_size * 100:.1f}%"],
+            ['Max Portfolio Risk', f"{settings.max_portfolio_risk * 100:.1f}%"],
+            ['', ''],
+            ['Database', ''],
+            ['Database URL', settings.database_url.split('@')[1] if '@' in settings.database_url else 'N/A'],
+            ['Pool Size', str(settings.database_pool_size)],
+        ]
 
-    click.echo(tabulate(status_info, tablefmt='plain'))
-    click.echo()
+        click.echo(tabulate(status_info, tablefmt='plain'))
+        click.echo()
+
+    watch_command(_status, watch)
 
 
 @cli.command()
 @click.option('--limit', type=int, default=10, help='Number of trades to show')
 @click.option('--symbol', type=str, default=None, help='Filter by symbol')
 @click.option('--strategy', type=str, default=None, help='Filter by strategy')
-def trades(limit, symbol, strategy):
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def trades(limit, symbol, strategy, watch):
     """View recent trades from database."""
     async def _trades():
         conn = await get_db_connection()
@@ -160,7 +189,7 @@ def trades(limit, symbol, strategy):
         finally:
             await conn.close()
 
-    asyncio.run(_trades())
+    watch_command(_trades, watch)
 
 
 @cli.command()
@@ -197,7 +226,8 @@ def metrics():
 
 
 @cli.command()
-def health():
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def health(watch):
     """Check bot health status."""
     async def _health():
         conn = await get_db_connection()
@@ -211,7 +241,7 @@ def health():
                 """
                 SELECT broker, strategy, is_healthy, connection_errors, last_bar_timestamp
                 FROM health_checks
-                ORDER BY last_check DESC
+                ORDER BY checked_at DESC
                 """
             )
             checks = await result.fetchall()
@@ -235,11 +265,12 @@ def health():
         finally:
             await conn.close()
 
-    asyncio.run(_health())
+    watch_command(_health, watch)
 
 
 @cli.command()
-def positions():
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def positions(watch):
     """Show current open positions."""
     async def _positions():
         conn = await get_db_connection()
@@ -282,7 +313,7 @@ def positions():
         finally:
             await conn.close()
 
-    asyncio.run(_positions())
+    watch_command(_positions, watch)
 
 
 @cli.command()
@@ -377,7 +408,8 @@ def schema(table):
 
 
 @cli.command()
-def summary():
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def summary(watch):
     """Show quick summary of everything."""
     async def _summary():
         conn = await get_db_connection()
@@ -416,7 +448,7 @@ def summary():
         finally:
             await conn.close()
 
-    asyncio.run(_summary())
+    watch_command(_summary, watch)
 
 
 @cli.command()
@@ -424,8 +456,8 @@ def summary():
 @click.option('--symbol', default=None, help='Filter by symbol')
 @click.option('--type', 'event_type', default=None, help='Filter by event type')
 @click.option('--severity', default=None, help='Filter by severity level')
-@click.option('--tail', is_flag=True, help='Show latest events (like tail -f)')
-def events(limit, symbol, event_type, severity, tail):
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def events(limit, symbol, event_type, severity, watch):
     """View trading events and decisions.
 
     Shows strategy decisions, filter checks, signal generation, and order events.
@@ -496,7 +528,7 @@ def events(limit, symbol, event_type, severity, tail):
         finally:
             await conn.close()
 
-    asyncio.run(_events())
+    watch_command(_events, watch)
 
 
 if __name__ == '__main__':
