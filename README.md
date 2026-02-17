@@ -1,17 +1,22 @@
 # Trading Bot
 
-A production-grade Python trading bot for Alpaca's paper and live trading APIs. Features clean architecture with easy switching between paper and live trading environments.
+A production-grade Python trading bot with **multi-broker support** (Alpaca & Coinbase). Features clean architecture with strategy framework, event logging, database persistence, and Docker deployment.
 
 ## Features
 
+- **Multi-Broker Support**: Trade on Alpaca (paper/live) and Coinbase (live crypto) with same strategy code
 - **Paper & Live Trading**: Seamless switching between trading environments via configuration
-- **Docker Support**: Run with `docker-compose` for easy deployment
+- **Event Logging**: Track all trading decisions (bars, filters, signals, orders) for troubleshooting
+- **PostgreSQL Database**: Persistent storage of trades, positions, health checks, and events
+- **Docker Support**: Full stack (bot + PostgreSQL) with `docker-compose` for easy deployment
+- **CLI Tools**: Command-line interface for checking status, trades, metrics, and events
 - **Flexible Configuration**: Support for config.yml + environment variable precedence
-- **Modular Architecture**: Clean abstractions for brokers, data providers, and strategies
 - **Strategy Framework**: Easy-to-implement base class for custom strategies
 - **Production-Ready Strategies**: Generic RSI+ATR strategy (works on forex, stocks, crypto, commodities)
+- **Filter System**: Volatility and liquidity filters to control when trades happen
 - **Portfolio Management**: Automatic position sizing and risk management
 - **Order Execution**: Robust order management with status tracking
+- **Health Monitoring**: Automatic health checks and reconnection logic
 - **Extensible Design**: Add new brokers, data sources, and strategies without modifying core code
 
 ## Quick Start (Docker)
@@ -66,18 +71,31 @@ python -m src.main
 python -m src.main
 ```
 
-### 4. Enable Strategies
+### 4. Configure Database (Optional)
+
+```bash
+# Create PostgreSQL database
+createdb trading_bot
+
+# Run migrations
+alembic upgrade head
+```
+
+### 5. Enable Strategies
 
 Edit `config/strategies.yaml`:
 
 ```yaml
 strategies:
-  # EUR/USD Professional Strategy (Recommended)
-  - name: "eur_usd_rsi_atr"
-    class: "EURUSDStrategy"
+  # RSI+ATR Strategy - Works on Stocks, Forex, Crypto
+  - name: "rsi_atr_trend_spy"
+    class: "RSIATRTrendStrategy"
     enabled: true
     symbols:
-      - "EURUSD"
+      - "SPY"  # Paper trading: stocks work, forex requires live account
+    parameters:
+      rsi_period: 14
+      position_size: 100
 
   # Other example strategies
   - name: "mean_reversion_spy"
@@ -87,7 +105,9 @@ strategies:
       - "SPY"
 ```
 
-### 5. Run the Bot
+**Note**: Alpaca paper trading supports stocks (SPY, QQQ, AAPL, etc.). Forex and crypto require a live account.
+
+### 6. Run the Bot
 
 ```bash
 python -m src.main
@@ -96,6 +116,13 @@ python -m src.main
 Monitor logs:
 ```bash
 tail -f logs/trading_bot.log
+```
+
+Check bot status with CLI:
+```bash
+python -m src.cli status              # Overall status
+python -m src.cli trades              # Trade history
+python -m src.cli events --limit 50   # Recent events
 ```
 
 ## Project Structure
@@ -109,12 +136,22 @@ trading-bot/
 │   └── README.md               # Docker documentation
 ├── docs/                        # Documentation
 │   ├── CONFIGURATION.md        # Configuration guide
-│   └── RSI_ATR_STRATEGY.md     # Generic RSI+ATR strategy guide
+│   ├── RSI_ATR_STRATEGY.md     # Generic RSI+ATR strategy guide
+│   ├── FILTERS.md              # Volatility & liquidity filters
+│   ├── MULTI_BROKER.md         # Alpaca & Coinbase support
+│   ├── DATABASE_SETUP.md       # PostgreSQL configuration
+│   ├── DATABASE_INTEGRATION.md # Database & health checks
+│   ├── ALEMBIC_MIGRATIONS.md   # Database schema migrations
+│   ├── DOCKER_SETUP.md         # Docker Compose deployment
+│   ├── TELEGRAM_SETUP.md       # Telegram notifications
+│   └── EUR_USD_STRATEGY.md     # EUR/USD strategy example
 ├── src/
 │   ├── main.py                 # Bot orchestrator
+│   ├── cli.py                  # Command-line interface
 │   ├── brokers/
 │   │   ├── base.py             # IBroker interface
 │   │   ├── alpaca_broker.py    # Alpaca implementation
+│   │   ├── coinbase_broker.py  # Coinbase implementation
 │   │   └── factory.py          # Broker factory
 │   ├── data/
 │   │   ├── base.py             # IDataProvider interface
@@ -132,8 +169,12 @@ trading-bot/
 │   │   └── manager.py          # Portfolio management
 │   ├── execution/
 │   │   └── order_manager.py    # Order execution
+│   ├── database/
+│   │   ├── health.py           # Health monitoring
+│   │   └── connection.py       # Database connection management
 │   ├── monitoring/
-│   │   └── logger.py           # Logging setup
+│   │   ├── logger.py           # Logging setup
+│   │   └── event_logger.py     # Event logging and tracking
 │   └── utils/
 │       └── exceptions.py       # Custom exceptions
 ├── config/
@@ -200,29 +241,41 @@ A production-ready, **asset-agnostic strategy** combining RSI, ATR, and EMAs. Wo
 - Expected: 52-58% win rate, 1.8-2.2 profit factor
 - Configurable per asset class
 
-**Setup Example (EUR/USD):**
+**Setup Example (Stocks - Paper Trading):**
+```yaml
+# config/strategies.yaml
+- name: "rsi_atr_trend_spy"
+  class: "RSIATRTrendStrategy"
+  enabled: true
+  symbols:
+    - "SPY"   # Works with Alpaca paper trading
+  parameters:
+    rsi_period: 14
+    position_size: 100  # Shares (stocks)
+    filters:
+      min_atr: 0.50
+      max_atr: 5.00
+      min_volume: 1000000
+```
+
+**Setup Example (Forex - Live Trading):**
 ```yaml
 # config/strategies.yaml
 - name: "rsi_atr_trend_eurusd"
   class: "RSIATRTrendStrategy"
   enabled: true
   symbols:
-    - "EURUSD"
+    - "EUR/USD"   # Requires live account (not available in paper trading)
   parameters:
     rsi_period: 14
-    position_size: 10  # Adjust per asset
+    position_size: 100000  # Units (forex)
+    filters:
+      min_atr: 30    # pips
+      max_atr: 200   # pips
+      min_volume: 500000
 ```
 
-**Or for Stocks (SPY):**
-```yaml
-- name: "rsi_atr_trend_spy"
-  class: "RSIATRTrendStrategy"
-  enabled: true
-  symbols:
-    - "SPY"
-  parameters:
-    position_size: 100  # Different size for stocks
-```
+**Note**: Alpaca paper trading supports stocks only. Forex, crypto, and commodities require a live trading account.
 
 See [docs/RSI_ATR_STRATEGY.md](docs/RSI_ATR_STRATEGY.md) for complete documentation and examples for different asset classes.
 
@@ -363,16 +416,42 @@ LOG_FILE=logs/trading_bot.log
 
 ## Monitoring
 
-Monitor your bot with:
+### Real-Time Logs
 
 ```bash
 # Watch log file in real-time
 tail -f logs/trading_bot.log
-
-# Check Alpaca dashboard
-# Visit https://app.alpaca.markets for paper trading
-# Visit https://app.alpaca.markets for live trading (different account)
 ```
+
+### CLI Commands
+
+The bot includes a command-line interface for checking status and debugging:
+
+```bash
+# Overall bot status
+python -m src.cli status
+
+# View recent trades
+python -m src.cli trades --limit 10
+
+# View trading events and decisions
+python -m src.cli events --limit 50
+
+# View specific event types
+python -m src.cli events --type BAR_RECEIVED --symbol SPY
+
+# View performance metrics
+python -m src.cli metrics
+
+# Check database health
+python -m src.cli health
+```
+
+### Web Dashboards
+
+- **Alpaca Paper Trading**: https://app.alpaca.markets (paper account)
+- **Alpaca Live Trading**: https://app.alpaca.markets (live account - different credentials)
+- **Coinbase**: https://advanced.coinbase.com (for live crypto trading)
 
 ## Testing
 
@@ -417,11 +496,26 @@ pytest tests/ --cov=src
 5. **Diversify**: Don't concentrate all capital in one position
 6. **Review Regularly**: Check performance metrics and adjust parameters
 
-## Resources
+## Documentation
+
+Complete guides for all features:
+
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Configuration methods, environment variables, priorities
+- **[RSI_ATR_STRATEGY.md](docs/RSI_ATR_STRATEGY.md)** - Generic RSI+ATR strategy for any asset class
+- **[FILTERS.md](docs/FILTERS.md)** - Volatility and liquidity filters configuration
+- **[MULTI_BROKER.md](docs/MULTI_BROKER.md)** - Alpaca and Coinbase setup and usage
+- **[DATABASE_SETUP.md](docs/DATABASE_SETUP.md)** - PostgreSQL installation and configuration
+- **[DATABASE_INTEGRATION.md](docs/DATABASE_INTEGRATION.md)** - Database schema, health checks
+- **[ALEMBIC_MIGRATIONS.md](docs/ALEMBIC_MIGRATIONS.md)** - Database migrations and schema versioning
+- **[DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** - Docker Compose deployment guide
+- **[TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)** - Telegram bot notifications
+- **[EUR_USD_STRATEGY.md](docs/EUR_USD_STRATEGY.md)** - Example EUR/USD trading strategy
+
+## External Resources
 
 - [Alpaca API Documentation](https://alpaca.markets/docs/)
 - [Alpaca SDK (alpaca-py)](https://github.com/alpacahq/alpaca-py)
-- [Trading Bot Architecture](docs/architecture.md)
+- [Coinbase Advanced Trading API](https://docs.cdp.coinbase.com/advanced-trade/docs/welcome)
 
 ## License
 

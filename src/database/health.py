@@ -164,7 +164,7 @@ class HealthCheckManager:
                     last_bar_timestamp, last_order_timestamp,
                     connection_errors, checked_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
 
             await self.conn.execute(
