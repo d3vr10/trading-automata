@@ -4,6 +4,7 @@ coinbase-advanced-py>=0.5.0
 
 # Database
 psycopg[binary]>=3.0.0  # PostgreSQL adapter (async support)
+sqlalchemy[asyncio]>=2.0.0  # Async ORM
 alembic>=1.12.0         # Database migrations
 
 # Configuration

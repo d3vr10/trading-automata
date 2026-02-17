@@ -9,8 +9,10 @@ import logging
 from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Any, Dict, Optional
-import psycopg
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from trading_bot.database.models import TradingEvent
 
 logger = logging.getLogger('trading_bot.events')
 
@@ -46,16 +48,16 @@ class EventLogger:
     SEV_ERROR = "ERROR"
     SEV_CRITICAL = "CRITICAL"
 
-    def __init__(self, db_url: str = None):
+    def __init__(self, session_factory: Optional[async_sessionmaker[AsyncSession]] = None):
         """Initialize event logger.
 
         Args:
-            db_url: Database URL for storing events. If None, only logs to stdout.
+            session_factory: Async sessionmaker factory for storing events. If None, only logs to stdout.
         """
-        self.db_url = db_url
-        self.enabled = db_url is not None
+        self.session_factory = session_factory
+        self.enabled = session_factory is not None
 
-    def log_bar_received(
+    async def log_bar_received(
         self,
         symbol: str,
         strategy: str,
@@ -63,7 +65,7 @@ class EventLogger:
         details: Dict[str, Any],
     ):
         """Log when a new bar is received."""
-        self._log(
+        await self._log(
             event_type=self.EVENT_BAR_RECEIVED,
             symbol=symbol,
             strategy=strategy,
@@ -74,7 +76,7 @@ class EventLogger:
         )
         logger.debug(f"[{symbol}] Bar received: O={details.get('open')}, H={details.get('high')}, L={details.get('low')}, C={details.get('close')}")
 
-    def log_filter_check(
+    async def log_filter_check(
         self,
         symbol: str,
         strategy: str,
@@ -89,7 +91,7 @@ class EventLogger:
         severity = self.SEV_DEBUG if passed else self.SEV_WARNING
         status = "✓ PASS" if passed else "✗ FAIL"
 
-        self._log(
+        await self._log(
             event_type=event_type,
             symbol=symbol,
             strategy=strategy,
@@ -102,7 +104,7 @@ class EventLogger:
         log_fn = logger.debug if passed else logger.warning
         log_fn(f"[{symbol}] {status} {filter_name}: {message}")
 
-    def log_signal_generated(
+    async def log_signal_generated(
         self,
         symbol: str,
         strategy: str,
@@ -113,7 +115,7 @@ class EventLogger:
         details: Dict[str, Any],
     ):
         """Log when a trading signal is generated."""
-        self._log(
+        await self._log(
             event_type=self.EVENT_SIGNAL_GENERATED,
             symbol=symbol,
             strategy=strategy,
@@ -124,7 +126,7 @@ class EventLogger:
         )
         logger.info(f"[{symbol}] [{strategy}] 🎯 SIGNAL: {action.upper()} qty={quantity}, confidence={confidence:.2f}")
 
-    def log_order_submitted(
+    async def log_order_submitted(
         self,
         symbol: str,
         strategy: str,
@@ -144,7 +146,7 @@ class EventLogger:
             "price": price,
         })
 
-        self._log(
+        await self._log(
             event_type=self.EVENT_ORDER_SUBMITTED,
             symbol=symbol,
             strategy=strategy,
@@ -155,7 +157,7 @@ class EventLogger:
         )
         logger.info(f"[{symbol}] [{strategy}] ✓ Order submitted: {order_id}, {side.upper()} {quantity}")
 
-    def log_order_filled(
+    async def log_order_filled(
         self,
         symbol: str,
         strategy: str,
@@ -175,7 +177,7 @@ class EventLogger:
             "filled_price": filled_price,
         })
 
-        self._log(
+        await self._log(
             event_type=self.EVENT_ORDER_FILLED,
             symbol=symbol,
             strategy=strategy,
@@ -186,7 +188,7 @@ class EventLogger:
         )
         logger.info(f"[{symbol}] [{strategy}] ✓ Order FILLED: {order_id}, {side.upper()} {quantity} @ {filled_price:.2f}")
 
-    def log_order_failed(
+    async def log_order_failed(
         self,
         symbol: str,
         strategy: str,
@@ -199,7 +201,7 @@ class EventLogger:
         details = details or {}
         details["reason"] = reason
 
-        self._log(
+        await self._log(
             event_type=self.EVENT_ORDER_FAILED,
             symbol=symbol,
             strategy=strategy,
@@ -210,7 +212,7 @@ class EventLogger:
         )
         logger.error(f"[{symbol}] [{strategy}] ✗ Order FAILED: {order_id} - {reason}")
 
-    def log_error(
+    async def log_error(
         self,
         symbol: str,
         strategy: str,
@@ -225,7 +227,7 @@ class EventLogger:
             details["exception"] = str(exception)
             details["exception_type"] = type(exception).__name__
 
-        self._log(
+        await self._log(
             event_type=self.EVENT_ERROR,
             symbol=symbol,
             strategy=strategy,
@@ -236,7 +238,7 @@ class EventLogger:
         )
         logger.error(f"[{symbol}] [{strategy}] ERROR: {message}")
 
-    def log_warning(
+    async def log_warning(
         self,
         symbol: str,
         strategy: str,
@@ -245,7 +247,7 @@ class EventLogger:
         details: Dict[str, Any] = None,
     ):
         """Log a warning event."""
-        self._log(
+        await self._log(
             event_type=self.EVENT_WARNING,
             symbol=symbol,
             strategy=strategy,
@@ -256,7 +258,7 @@ class EventLogger:
         )
         logger.warning(f"[{symbol}] [{strategy}] WARNING: {message}")
 
-    def _log(
+    async def _log(
         self,
         event_type: str,
         symbol: str,
@@ -266,33 +268,24 @@ class EventLogger:
         message: str,
         details: Dict[str, Any],
     ):
-        """Internal method to log to database."""
+        """Internal method to log to database using ORM."""
         if not self.enabled:
             return
 
         try:
-            conn = psycopg.connect(self.db_url)
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO trading_events
-                    (event_type, event_timestamp, severity, strategy, symbol, broker, message, details)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        event_type,
-                        datetime.now(UTC),
-                        severity,
-                        strategy,
-                        symbol,
-                        broker,
-                        message,
-                        json.dumps(details, cls=DecimalJSONEncoder) if details else None,
-                    ),
+            async with self.session_factory() as session:
+                event = TradingEvent(
+                    event_type=event_type,
+                    event_timestamp=datetime.now(UTC),
+                    severity=severity,
+                    strategy=strategy,
+                    symbol=symbol,
+                    broker=broker,
+                    message=message,
+                    details=json.dumps(details, cls=DecimalJSONEncoder) if details else None,
                 )
-                conn.commit()
-            finally:
-                conn.close()
+                session.add(event)
+                await session.commit()
         except Exception as e:
             logger.error(f"Failed to log event to database: {e}")
 
@@ -301,10 +294,10 @@ class EventLogger:
 _event_logger: Optional[EventLogger] = None
 
 
-def init_event_logger(db_url: str = None) -> EventLogger:
-    """Initialize the global event logger."""
+def init_event_logger(session_factory: Optional[async_sessionmaker[AsyncSession]] = None) -> EventLogger:
+    """Initialize the global event logger with async session factory."""
     global _event_logger
-    _event_logger = EventLogger(db_url)
+    _event_logger = EventLogger(session_factory)
     return _event_logger
 
 

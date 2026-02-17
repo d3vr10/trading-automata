@@ -276,23 +276,25 @@ class AlpacaDataProvider(IDataProvider):
         Raises:
             ValueError: If timeframe is not recognized.
         """
+        from alpaca.data.timeframe import TimeFrameUnit
+
         timeframe = timeframe.lower().strip()
 
         if timeframe == '1min':
-            return TimeFrame.One_Minute
+            return TimeFrame.Minute
         elif timeframe == '5min':
-            return TimeFrame.Five_Minute
+            return TimeFrame(5, TimeFrameUnit.Minute)
         elif timeframe == '15min':
-            return TimeFrame.Fifteen_Minute
+            return TimeFrame(15, TimeFrameUnit.Minute)
         elif timeframe in ('30min', '30'):
-            return TimeFrame.Thirty_Minute
+            return TimeFrame(30, TimeFrameUnit.Minute)
         elif timeframe in ('1h', '60min', '60'):
-            return TimeFrame.One_Hour
+            return TimeFrame.Hour
         elif timeframe in ('1d', 'day'):
-            return TimeFrame.One_Day
+            return TimeFrame.Day
         elif timeframe in ('1w', 'week'):
-            return TimeFrame.One_Week
+            return TimeFrame.Week
         elif timeframe in ('1mo', 'month'):
-            return TimeFrame.One_Month
+            return TimeFrame.Month
         else:
             raise ValueError(f"Unsupported timeframe: {timeframe}")

@@ -11,7 +11,7 @@ Provides:
 import logging
 from typing import Optional, Dict, Any
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, UTC
 
 from telegram import Update, BotCommand
 from telegram.ext import (
@@ -21,6 +21,9 @@ from telegram.ext import (
     ConversationHandler,
 )
 from telegram.constants import ParseMode
+from sqlalchemy import select
+
+from trading_bot.database.models import DatabaseConnection, BotSession
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +31,23 @@ logger = logging.getLogger(__name__)
 class TradingBotTelegram:
     """Telegram bot interface for trading bot management."""
 
-    def __init__(self, token: str, chat_id: str, database_url: Optional[str] = None):
+    def __init__(self, token: str, chat_id: str, database_url: Optional[str] = None,
+                 pool_size: int = 10, max_overflow: int = 20):
         """Initialize Telegram bot.
 
         Args:
             token: Telegram bot token from BotFather
             chat_id: Telegram chat ID to send messages to
             database_url: PostgreSQL connection URL for accessing bot data
+            pool_size: Database connection pool size
+            max_overflow: Database connection pool overflow size
         """
         self.token = token
         self.chat_id = chat_id
         self.database_url = database_url
+        self.pool_size = pool_size
+        self.max_overflow = max_overflow
+        self.database: Optional[DatabaseConnection] = None
         self.application: Optional[Application] = None
         self._bot = None
 
@@ -164,7 +173,7 @@ class TradingBotTelegram:
 <b>Price:</b> ${float(price):.2f}
 <b>Quantity:</b> {float(quantity):.4f}
 <b>Strategy:</b> {strategy}
-<b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+<b>Time:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await self.send_message(message)
 
@@ -184,7 +193,7 @@ class TradingBotTelegram:
 <b>Total Trades:</b> {total_trades}
 <b>Win Rate:</b> {win_rate:.1f}%
 <b>Profit Factor:</b> {profit_factor:.2f}
-<b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+<b>Time:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await self.send_message(message)
 
@@ -199,7 +208,7 @@ class TradingBotTelegram:
 
 <b>Type:</b> {error_type}
 <b>Message:</b> {message}
-<b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+<b>Time:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await self.send_message(alert)
 
@@ -220,7 +229,7 @@ class TradingBotTelegram:
 <b>Status:</b> {'HEALTHY' if is_healthy else 'UNHEALTHY'}
 <b>Connection Errors:</b> {errors}
 <b>Last Bar:</b> {status.get('last_bar_timestamp', 'N/A')}
-<b>Time:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+<b>Time:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await self.send_message(message)
 
@@ -314,7 +323,7 @@ Trading has been resumed. The bot will resume executing trades.
         message = f"""🤖 <b>Trading Bot Version</b>
 
 <b>Version:</b> <code>{version_str}</code>
-<b>Timestamp:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+<b>Timestamp:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await update.message.reply_html(message)
 
@@ -329,25 +338,23 @@ Database not configured - cannot retrieve uptime.
             return
 
         try:
-            import psycopg
-            conn = await psycopg.AsyncConnection.connect(self.database_url)
+            # Initialize database connection if not already done
+            if not self.database:
+                self.database = DatabaseConnection(
+                    database_url=self.database_url,
+                    pool_size=self.pool_size,
+                    max_overflow=self.max_overflow,
+                )
 
             # Get latest bot session start time
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    SELECT started_at
-                    FROM bot_sessions
-                    ORDER BY started_at DESC
-                    LIMIT 1
-                    """
-                )
-                row = await cur.fetchone()
-            await conn.close()
+            async with self.database.session_factory() as session:
+                stmt = select(BotSession).order_by(BotSession.started_at.desc()).limit(1)
+                result = await session.execute(stmt)
+                bot_session = result.scalar_one_or_none()
 
-            if row and row[0]:
-                start_time = row[0]
-                now = datetime.utcnow()
+            if bot_session:
+                start_time = bot_session.started_at
+                now = datetime.now(UTC)
                 uptime_delta = now - start_time
                 hours = uptime_delta.seconds // 3600
                 minutes = (uptime_delta.seconds % 3600) // 60
@@ -395,6 +402,11 @@ No bot session found - bot may not have started yet.
             await self.application.updater.stop()
             await self.application.stop()
             await self.application.shutdown()
+
+            # Dispose database connection if initialized
+            if self.database:
+                await self.database.dispose()
+
             logger.info("Telegram bot stopped")
         except Exception as e:
             logger.error(f"Error stopping Telegram bot: {e}")

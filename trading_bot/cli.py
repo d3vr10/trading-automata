@@ -16,11 +16,11 @@ from decimal import Decimal
 from typing import Optional, Callable
 
 import click
-import psycopg
+from sqlalchemy import select, func
 from tabulate import tabulate
 
 from config.settings import load_settings
-from trading_bot.database.health import HealthCheckRegistry
+from trading_bot.database.models import DatabaseConnection, Trade, Position, HealthCheck, TradingEvent, BotSession
 from trading_bot.database.repository import TradeRepository
 
 
@@ -41,12 +41,16 @@ def colored(text: str, color: str) -> str:
     return f"{color}{text}{Colors.RESET}"
 
 
-async def get_db_connection():
-    """Get async database connection."""
+def get_database():
+    """Get database connection with ORM session factory."""
     settings = load_settings()
     try:
-        conn = await psycopg.AsyncConnection.connect(settings.database_url)
-        return conn
+        db = DatabaseConnection(
+            database_url=settings.database_url,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+        )
+        return db
     except Exception as e:
         click.echo(colored(f"❌ Failed to connect to database: {e}", Colors.RED))
         sys.exit(1)
@@ -123,38 +127,38 @@ def status(format, watch):
 def trades(limit, symbol, strategy, watch):
     """View recent trades from database."""
     async def _trades():
-        conn = await get_db_connection()
-        repo = TradeRepository(conn)
+        db = get_database()
+        repo = TradeRepository(db.session_factory)
 
         try:
-            all_trades = await repo.get_trades_by_symbol(symbol) if symbol else []
-
-            if not symbol:
-                # Get all trades (fallback if method doesn't support all)
-                query = """
-                    SELECT id, symbol, strategy, broker, entry_price, entry_quantity,
-                           exit_price, exit_quantity, pnl_percent, entry_timestamp, exit_timestamp
-                    FROM trades
-                    WHERE 1=1
-                """
-                params = []
-                if symbol:
-                    query += " AND symbol = %s"
-                    params.append(symbol)
-                if strategy and not symbol:
-                    query += " AND strategy = %s"
-                    params.append(strategy)
-                query += f" ORDER BY entry_timestamp DESC LIMIT {limit}"
-
-                async with conn.cursor() as cur:
-                    await cur.execute(query, tuple(params) if params else ())
-                    trades_list = await cur.fetchall()
+            if symbol:
+                trades_list = await repo.get_trades_by_symbol(symbol, limit=limit)
+            elif strategy:
+                trades_list = await repo.get_trades_by_strategy(strategy, limit=limit)
             else:
-                trades_list = all_trades[:limit]
+                # Get all recent trades
+                async with db.session_factory() as session:
+                    stmt = select(Trade).order_by(Trade.entry_timestamp.desc()).limit(limit)
+                    result = await session.execute(stmt)
+                    trade_objs = result.scalars().all()
+                    trades_list = [
+                        {
+                            'id': t.id,
+                            'symbol': t.symbol,
+                            'strategy': t.strategy,
+                            'entry_price': t.entry_price,
+                            'entry_quantity': t.entry_quantity,
+                            'exit_price': t.exit_price,
+                            'exit_quantity': t.exit_quantity,
+                            'pnl_percent': t.pnl_percent,
+                            'entry_timestamp': t.entry_timestamp,
+                            'exit_timestamp': t.exit_timestamp,
+                        }
+                        for t in trade_objs
+                    ]
 
             if not trades_list:
                 click.echo(colored("No trades found", Colors.YELLOW))
-                await conn.close()
                 return
 
             click.echo(f"\n{colored('📊 Recent Trades', Colors.BOLD)}")
@@ -165,7 +169,13 @@ def trades(limit, symbol, strategy, watch):
 
             rows = []
             for trade in trades_list:
-                trade_id, sym, strat, broker, entry_price, entry_qty, exit_price, exit_qty, pnl, entry_ts, exit_ts = trade
+                entry_price = trade.get('entry_price') or trade['entry_price']
+                entry_qty = trade.get('entry_quantity') or trade['entry_quantity']
+                exit_price = trade.get('exit_price')
+                exit_qty = trade.get('exit_quantity')
+                pnl = trade.get('pnl_percent')
+                entry_ts = trade.get('entry_timestamp')
+                exit_ts = trade.get('exit_timestamp')
 
                 # Color code P&L
                 pnl_str = f"{pnl:.2f}%" if pnl else "Open"
@@ -175,9 +185,9 @@ def trades(limit, symbol, strategy, watch):
                     pnl_str = colored(pnl_str, Colors.RED)
 
                 rows.append([
-                    trade_id,
-                    sym,
-                    strat,
+                    trade['id'],
+                    trade['symbol'],
+                    trade['strategy'],
                     'BUY' if entry_ts else 'N/A',
                     f"${float(entry_price):.2f}" if entry_price else 'N/A',
                     f"{float(entry_qty):.4f}" if entry_qty else 'N/A',
@@ -192,7 +202,7 @@ def trades(limit, symbol, strategy, watch):
             click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     watch_command(_trades, watch)
 
@@ -201,15 +211,14 @@ def trades(limit, symbol, strategy, watch):
 def metrics():
     """Show performance metrics."""
     async def _metrics():
-        conn = await get_db_connection()
-        repo = TradeRepository(conn)
+        db = get_database()
+        repo = TradeRepository(db.session_factory)
 
         try:
             metrics_data = await repo.get_performance_metrics()
 
             if not metrics_data:
                 click.echo(colored("No metrics available yet", Colors.YELLOW))
-                await conn.close()
                 return
 
             click.echo(f"\n{colored('📈 Performance Metrics', Colors.BOLD)}")
@@ -225,7 +234,7 @@ def metrics():
             click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     asyncio.run(_metrics())
 
@@ -235,40 +244,34 @@ def metrics():
 def health(watch):
     """Check bot health status."""
     async def _health():
-        conn = await get_db_connection()
-        registry = HealthCheckRegistry(conn)
+        db = get_database()
 
         try:
             click.echo(f"\n{colored('🔋 Health Check Status', Colors.BOLD)}")
             click.echo(colored('=' * 80, Colors.CYAN))
 
-            result = await conn.execute(
-                """
-                SELECT broker, strategy, is_healthy, connection_errors, last_bar_timestamp
-                FROM health_checks
-                ORDER BY checked_at DESC
-                """
-            )
-            checks = await result.fetchall()
+            async with db.session_factory() as session:
+                stmt = select(HealthCheck).order_by(HealthCheck.checked_at.desc())
+                result = await session.execute(stmt)
+                checks = result.scalars().all()
 
-            if not checks:
-                click.echo(colored("No health checks recorded yet", Colors.YELLOW))
-                await conn.close()
-                return
+                if not checks:
+                    click.echo(colored("No health checks recorded yet", Colors.YELLOW))
+                    return
 
-            headers = ['Broker', 'Strategy', 'Status', 'Errors', 'Last Bar']
-            rows = []
+                headers = ['Broker', 'Strategy', 'Status', 'Errors', 'Last Bar']
+                rows = []
 
-            for broker, strategy, is_healthy, errors, last_bar_ts in checks:
-                status = colored('🟢 Healthy', Colors.GREEN) if is_healthy else colored('🔴 Unhealthy', Colors.RED)
-                last_bar = last_bar_ts.strftime('%Y-%m-%d %H:%M:%S') if last_bar_ts else 'Never'
-                rows.append([broker, strategy, status, errors, last_bar])
+                for check in checks:
+                    status = colored('🟢 Healthy', Colors.GREEN) if check.is_healthy else colored('🔴 Unhealthy', Colors.RED)
+                    last_bar = check.last_bar_timestamp.strftime('%Y-%m-%d %H:%M:%S') if check.last_bar_timestamp else 'Never'
+                    rows.append([check.broker, check.strategy or '-', status, check.connection_errors, last_bar])
 
-            click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
-            click.echo()
+                click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
+                click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     watch_command(_health, watch)
 
@@ -278,45 +281,39 @@ def health(watch):
 def positions(watch):
     """Show current open positions."""
     async def _positions():
-        conn = await get_db_connection()
+        db = get_database()
 
         try:
-            result = await conn.execute(
-                """
-                SELECT symbol, strategy, entry_price, quantity, opened_at
-                FROM positions
-                WHERE is_open = true
-                ORDER BY opened_at DESC
-                """
-            )
-            positions_list = await result.fetchall()
+            async with db.session_factory() as session:
+                stmt = select(Position).where(Position.is_open == True).order_by(Position.opened_at.desc())
+                result = await session.execute(stmt)
+                positions_list = result.scalars().all()
 
-            if not positions_list:
-                click.echo(colored("No open positions", Colors.YELLOW))
-                await conn.close()
-                return
+                if not positions_list:
+                    click.echo(colored("No open positions", Colors.YELLOW))
+                    return
 
-            click.echo(f"\n{colored('💼 Open Positions', Colors.BOLD)}")
-            click.echo(colored('=' * 80, Colors.CYAN))
+                click.echo(f"\n{colored('💼 Open Positions', Colors.BOLD)}")
+                click.echo(colored('=' * 80, Colors.CYAN))
 
-            headers = ['Symbol', 'Strategy', 'Entry Price', 'Quantity', 'Entry Time']
-            rows = []
+                headers = ['Symbol', 'Strategy', 'Entry Price', 'Quantity', 'Entry Time']
+                rows = []
 
-            for symbol, strategy, entry_price, quantity, entry_ts in positions_list:
-                rows.append([
-                    symbol,
-                    strategy,
-                    f"${float(entry_price):.2f}",
-                    f"{float(quantity):.4f}",
-                    entry_ts.strftime('%Y-%m-%d %H:%M:%S'),
-                ])
+                for pos in positions_list:
+                    rows.append([
+                        pos.symbol,
+                        pos.strategy,
+                        f"${float(pos.entry_price):.2f}",
+                        f"{float(pos.quantity):.4f}",
+                        pos.opened_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    ])
 
-            click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
-            click.echo(f"\nTotal open positions: {len(positions_list)}")
-            click.echo()
+                click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
+                click.echo(f"\nTotal open positions: {len(positions_list)}")
+                click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     watch_command(_positions, watch)
 
@@ -328,7 +325,7 @@ def query():
     click.echo("Type 'exit' to quit\n")
 
     async def _query_loop():
-        conn = await get_db_connection()
+        db = get_database()
 
         try:
             while True:
@@ -346,20 +343,23 @@ def query():
                         click.echo(colored("Only SELECT queries are allowed", Colors.RED))
                         continue
 
-                    result = await conn.execute(sql)
-                    rows = await result.fetchall()
+                    async with db.session_factory() as session:
+                        from sqlalchemy import text
+                        result = await session.execute(text(sql))
+                        rows = result.fetchall()
 
-                    if rows:
-                        headers = [desc[0] for desc in result.description]
-                        click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
-                    else:
-                        click.echo(colored("No results", Colors.YELLOW))
+                        if rows:
+                            # Get column names from result keys
+                            headers = result.keys()
+                            click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
+                        else:
+                            click.echo(colored("No results", Colors.YELLOW))
 
                 except Exception as e:
                     click.echo(colored(f"Error: {e}", Colors.RED))
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     asyncio.run(_query_loop())
 
@@ -370,44 +370,45 @@ def query():
 def schema(table):
     """Show database table schema."""
     async def _schema():
-        conn = await get_db_connection()
+        db = get_database()
 
         try:
-            result = await conn.execute(
-                """
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_name = $1
-                ORDER BY ordinal_position
-                """,
-                table
-            )
-            columns = await result.fetchall()
+            async with db.session_factory() as session:
+                from sqlalchemy import text
+                result = await session.execute(
+                    text("""
+                        SELECT column_name, data_type, is_nullable, column_default
+                        FROM information_schema.columns
+                        WHERE table_name = :table_name
+                        ORDER BY ordinal_position
+                    """),
+                    {"table_name": table}
+                )
+                columns = result.fetchall()
 
-            if not columns:
-                click.echo(colored(f"Table '{table}' not found", Colors.RED))
-                await conn.close()
-                return
+                if not columns:
+                    click.echo(colored(f"Table '{table}' not found", Colors.RED))
+                    return
 
-            click.echo(f"\n{colored(f'📋 Table Schema: {table}', Colors.BOLD)}")
-            click.echo(colored('=' * 80, Colors.CYAN))
+                click.echo(f"\n{colored(f'📋 Table Schema: {table}', Colors.BOLD)}")
+                click.echo(colored('=' * 80, Colors.CYAN))
 
-            headers = ['Column', 'Type', 'Nullable', 'Default']
-            rows = []
+                headers = ['Column', 'Type', 'Nullable', 'Default']
+                rows = []
 
-            for col_name, data_type, nullable, default in columns:
-                rows.append([
-                    col_name,
-                    data_type,
-                    'Yes' if nullable == 'YES' else 'No',
-                    default or 'N/A',
-                ])
+                for col_name, data_type, nullable, default in columns:
+                    rows.append([
+                        col_name,
+                        data_type,
+                        'Yes' if nullable == 'YES' else 'No',
+                        default or 'N/A',
+                    ])
 
-            click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
-            click.echo()
+                click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
+                click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     asyncio.run(_schema())
 
@@ -417,24 +418,29 @@ def schema(table):
 def summary(watch):
     """Show quick summary of everything."""
     async def _summary():
-        conn = await get_db_connection()
-        repo = TradeRepository(conn)
+        db = get_database()
+        repo = TradeRepository(db.session_factory)
 
         try:
-            # Count trades
-            trades_result = await conn.execute("SELECT COUNT(*) FROM trades")
-            trade_count = (await trades_result.fetchone())[0]
+            async with db.session_factory() as session:
+                # Count trades
+                trade_count_result = await session.execute(select(func.count(Trade.id)))
+                trade_count = trade_count_result.scalar() or 0
 
-            # Get win rate
+                # Count open positions
+                open_pos_result = await session.execute(
+                    select(func.count(Position.id)).where(Position.is_open == True)
+                )
+                open_positions = open_pos_result.scalar() or 0
+
+                # Get health status
+                healthy_result = await session.execute(
+                    select(func.count(HealthCheck.id)).where(HealthCheck.is_healthy == True)
+                )
+                healthy_checks = healthy_result.scalar() or 0
+
+            # Get win rate and profit factor
             metrics = await repo.get_performance_metrics()
-
-            # Count open positions
-            pos_result = await conn.execute("SELECT COUNT(*) FROM positions WHERE is_open = true")
-            open_positions = (await pos_result.fetchone())[0]
-
-            # Get health status
-            health_result = await conn.execute("SELECT COUNT(*) FROM health_checks WHERE is_healthy = true")
-            healthy_checks = (await health_result.fetchone())[0]
 
             click.echo(f"\n{colored('🎯 Trading Bot Summary', Colors.BOLD)}")
             click.echo(colored('=' * 50, Colors.CYAN))
@@ -451,7 +457,7 @@ def summary(watch):
             click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     watch_command(_summary, watch)
 
@@ -469,70 +475,62 @@ def events(limit, symbol, event_type, severity, watch):
     Use this to troubleshoot why the bot isn't making trades.
     """
     async def _events():
-        conn = await get_db_connection()
-        if conn is None:
-            return
+        db = get_database()
 
         try:
-            # Build query
-            query = "SELECT event_type, event_timestamp, severity, symbol, strategy, message, details FROM trading_events WHERE 1=1"
-            params = []
+            async with db.session_factory() as session:
+                # Build query with filters
+                stmt = select(TradingEvent)
 
-            if symbol:
-                query += " AND symbol = %s"
-                params.append(symbol)
+                if symbol:
+                    stmt = stmt.where(TradingEvent.symbol == symbol)
 
-            if event_type:
-                query += " AND event_type = %s"
-                params.append(event_type)
+                if event_type:
+                    stmt = stmt.where(TradingEvent.event_type == event_type)
 
-            if severity:
-                query += " AND severity = %s"
-                params.append(severity)
+                if severity:
+                    stmt = stmt.where(TradingEvent.severity == severity)
 
-            query += " ORDER BY event_timestamp DESC LIMIT %s"
-            params.append(limit)
+                stmt = stmt.order_by(TradingEvent.event_timestamp.desc()).limit(limit)
 
-            result = await conn.execute(query, params)
-            events_data = await result.fetchall()
+                result = await session.execute(stmt)
+                events_data = result.scalars().all()
 
-            if not events_data:
-                click.echo(colored("No events found", Colors.YELLOW))
-                return
+                if not events_data:
+                    click.echo(colored("No events found", Colors.YELLOW))
+                    return
 
-            click.echo(f"\n{colored('📊 Trading Events', Colors.BOLD)}")
-            click.echo(colored('=' * 100, Colors.CYAN))
+                click.echo(f"\n{colored('📊 Trading Events', Colors.BOLD)}")
+                click.echo(colored('=' * 100, Colors.CYAN))
 
-            # Format events for display
-            rows = []
-            for event in events_data:
-                event_type_str, timestamp, sev, sym, strategy, msg, details = event
+                # Format events for display
+                rows = []
+                for event in events_data:
+                    # Color code by severity
+                    if event.severity == 'ERROR':
+                        sev_colored = colored(event.severity, Colors.RED)
+                    elif event.severity == 'WARNING':
+                        sev_colored = colored(event.severity, Colors.YELLOW)
+                    else:
+                        sev_colored = colored(event.severity, Colors.GREEN)
 
-                # Color code by severity
-                if sev == 'ERROR':
-                    sev_colored = colored(sev, Colors.RED)
-                elif sev == 'WARNING':
-                    sev_colored = colored(sev, Colors.YELLOW)
-                else:
-                    sev_colored = colored(sev, Colors.GREEN)
+                    # Format timestamp
+                    ts_str = event.event_timestamp.strftime('%H:%M:%S')
 
-                # Format timestamp
-                ts_str = timestamp.strftime('%H:%M:%S') if hasattr(timestamp, 'strftime') else str(timestamp)
+                    rows.append([
+                        ts_str,
+                        colored(event.symbol or '-', Colors.BLUE),
+                        colored(event.strategy or '-', Colors.CYAN),
+                        sev_colored,
+                        event.event_type[:20],
+                        event.message[:50] + ('...' if len(event.message) > 50 else ''),
+                    ])
 
-                rows.append([
-                    ts_str,
-                    colored(sym or '-', Colors.BLUE),
-                    colored(strategy or '-', Colors.CYAN),
-                    sev_colored,
-                    event_type_str[:20],
-                    msg[:50] + ('...' if len(msg) > 50 else ''),
-                ])
-
-            click.echo(tabulate(rows, headers=['Time', 'Symbol', 'Strategy', 'Level', 'Type', 'Message'], tablefmt='simple'))
-            click.echo()
+                click.echo(tabulate(rows, headers=['Time', 'Symbol', 'Strategy', 'Level', 'Type', 'Message'], tablefmt='simple'))
+                click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     watch_command(_events, watch)
 
@@ -562,41 +560,36 @@ def version():
 def uptime():
     """Show bot uptime and start time."""
     async def _uptime():
-        conn = await get_db_connection()
+        db = get_database()
         try:
-            # Get the latest bot session start time (actual process start, not database lifetime)
-            result = await conn.execute(
-                """
-                SELECT started_at
-                FROM bot_sessions
-                ORDER BY started_at DESC
-                LIMIT 1
-                """
-            )
-            row = await result.fetchone()
-            start_time = row[0] if row and row[0] else None
+            async with db.session_factory() as session:
+                # Get the latest bot session start time (actual process start, not database lifetime)
+                stmt = select(BotSession).order_by(BotSession.started_at.desc()).limit(1)
+                result = await session.execute(stmt)
+                bot_session = result.scalar_one_or_none()
+                start_time = bot_session.started_at if bot_session else None
 
-            click.echo(f"\n{colored('⏱️  Bot Uptime', Colors.BOLD)}")
-            click.echo(colored('=' * 50, Colors.CYAN))
+                click.echo(f"\n{colored('⏱️  Bot Uptime', Colors.BOLD)}")
+                click.echo(colored('=' * 50, Colors.CYAN))
 
-            if start_time:
-                now = datetime.now(UTC)
-                uptime_delta = now - start_time
-                hours = uptime_delta.seconds // 3600
-                minutes = (uptime_delta.seconds % 3600) // 60
-                seconds = uptime_delta.seconds % 60
-                days = uptime_delta.days
+                if start_time:
+                    now = datetime.now(UTC)
+                    uptime_delta = now - start_time
+                    hours = uptime_delta.seconds // 3600
+                    minutes = (uptime_delta.seconds % 3600) // 60
+                    seconds = uptime_delta.seconds % 60
+                    days = uptime_delta.days
 
-                click.echo(f"Started at: {colored(start_time.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
-                click.echo(f"Current time: {colored(now.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
-                click.echo(f"Uptime: {colored(f'{days}d {hours}h {minutes}m {seconds}s', Colors.GREEN)}")
-            else:
-                click.echo(colored("No bot session found - bot may not have started yet", Colors.YELLOW))
+                    click.echo(f"Started at: {colored(start_time.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
+                    click.echo(f"Current time: {colored(now.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
+                    click.echo(f"Uptime: {colored(f'{days}d {hours}h {minutes}m {seconds}s', Colors.GREEN)}")
+                else:
+                    click.echo(colored("No bot session found - bot may not have started yet", Colors.YELLOW))
 
-            click.echo()
+                click.echo()
 
         finally:
-            await conn.close()
+            await db.dispose()
 
     asyncio.run(_uptime())
 

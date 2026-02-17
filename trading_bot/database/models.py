@@ -3,16 +3,16 @@
 Stores trades, positions, events, and performance metrics.
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
     Column, String, Float, DateTime, Integer, Boolean,
-    Numeric, Text, create_engine, Index
+    Numeric, Text, Index, event
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -30,7 +30,7 @@ class Trade(Base):
     broker = Column(String(50), nullable=False)
 
     # Entry details
-    entry_timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    entry_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True)
     entry_price = Column(Numeric(20, 8), nullable=False)
     entry_quantity = Column(Numeric(20, 8), nullable=False)
     entry_order_id = Column(String(100), unique=True)
@@ -57,8 +57,8 @@ class Trade(Base):
 
     # Metadata
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     # Indexes for common queries
     __table_args__ = (
@@ -87,7 +87,7 @@ class Position(Base):
 
     # Status
     is_open = Column(Boolean, default=True, index=True)
-    opened_at = Column(DateTime, default=datetime.utcnow)
+    opened_at = Column(DateTime, default=lambda: datetime.now(UTC))
     closed_at = Column(DateTime, nullable=True)
 
     # Performance
@@ -97,8 +97,8 @@ class Position(Base):
     # Metadata
     stop_loss = Column(Numeric(20, 8), nullable=True)
     take_profit = Column(Numeric(20, 8), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
 class PerformanceMetric(Base):
@@ -109,7 +109,7 @@ class PerformanceMetric(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Time period
-    metric_date = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    metric_date = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True)
     period = Column(String(20), nullable=False)  # 'hourly', 'daily', 'weekly'
 
     # Strategy & broker
@@ -138,7 +138,7 @@ class PerformanceMetric(Base):
     portfolio_value = Column(Numeric(20, 8), nullable=True)
     portfolio_return_percent = Column(Float, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class TradingEvent(Base):
@@ -150,7 +150,7 @@ class TradingEvent(Base):
 
     # Event details
     event_type = Column(String(50), nullable=False, index=True)  # 'trade', 'error', 'alert', 'connection'
-    event_timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    event_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True)
     severity = Column(String(20), nullable=False)  # 'info', 'warning', 'error', 'critical'
 
     # Context
@@ -166,7 +166,7 @@ class TradingEvent(Base):
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # Indexes
     __table_args__ = (
@@ -192,7 +192,7 @@ class AlertLog(Base):
     message = Column(Text, nullable=False)
 
     # Status
-    sent_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sent_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     delivery_status = Column(String(20), default='pending')  # 'sent', 'failed', 'pending'
     error_message = Column(Text, nullable=True)
 
@@ -200,36 +200,86 @@ class AlertLog(Base):
     strategy = Column(String(100), nullable=True)
     symbol = Column(String(20), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class BotSession(Base):
+    """Tracks bot process start times for uptime calculation."""
+
+    __tablename__ = 'bot_sessions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Numeric, nullable=False, unique=True)
+    started_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index('idx_bot_sessions_started_at', 'started_at'),
+    )
+
+
+class HealthCheck(Base):
+    """Bot health monitoring and connection status."""
+
+    __tablename__ = 'health_checks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    broker = Column(String(50), nullable=False, index=True)
+    strategy = Column(String(100), nullable=True)
+    is_healthy = Column(Boolean, nullable=False)
+    last_bar_timestamp = Column(DateTime, nullable=True)
+    last_order_timestamp = Column(DateTime, nullable=True)
+    connection_errors = Column(Integer, default=0)
+    checked_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True)
+
+    __table_args__ = (
+        Index('idx_health_broker_strategy', 'broker', 'strategy'),
+    )
 
 
 class DatabaseConnection:
-    """Manages database connections and sessions."""
+    """Manages async database connections and sessions."""
 
-    def __init__(self, database_url: str):
-        """Initialize database connection.
+    def __init__(
+        self,
+        database_url: str,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+    ):
+        """Initialize async database connection.
 
         Args:
             database_url: PostgreSQL connection string
                 e.g., postgresql://user:password@localhost:5432/trading_bot
+            pool_size: Number of connections to keep in pool (default 10)
+            max_overflow: Maximum overflow connections (default 20)
         """
-        self.engine = create_engine(
+        # Convert postgresql:// to postgresql+psycopg:// for psycopg3 driver
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        elif database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+
+        self.engine = create_async_engine(
             database_url,
             echo=False,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
             pool_pre_ping=True,  # Test connections before using
+            connect_args={"timeout": 30},  # Connection timeout
         )
-        self.SessionLocal = sessionmaker(bind=self.engine)
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
 
-    def create_tables(self) -> None:
+    async def create_tables(self) -> None:
         """Create all tables in database."""
-        Base.metadata.create_all(self.engine)
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    def get_session(self) -> Session:
-        """Get a new database session."""
-        return self.SessionLocal()
-
-    def close(self) -> None:
-        """Close database connection."""
-        self.engine.dispose()
+    async def dispose(self) -> None:
+        """Close all connections in pool."""
+        await self.engine.dispose()

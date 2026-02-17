@@ -6,11 +6,13 @@ auto-reconnect logic with exponential backoff.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
-import psycopg
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from trading_bot.database.models import HealthCheck
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +28,15 @@ class HealthCheckManager:
     - Reconnection attempts with exponential backoff
     """
 
-    def __init__(self, conn: psycopg.AsyncConnection, broker: str, strategy: str):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], broker: str, strategy: str):
         """Initialize health check manager.
 
         Args:
-            conn: Async PostgreSQL connection
+            session_factory: Async sessionmaker factory
             broker: Broker name (alpaca, coinbase, etc.)
             strategy: Strategy being monitored
         """
-        self.conn = conn
+        self.session_factory = session_factory
         self.broker = broker
         self.strategy = strategy
 
@@ -43,7 +45,7 @@ class HealthCheckManager:
         self.last_bar_timestamp: Optional[datetime] = None
         self.last_order_timestamp: Optional[datetime] = None
         self.connection_errors = 0
-        self.last_check = datetime.utcnow()
+        self.last_check = datetime.now(UTC)
 
         # Reconnection tracking
         self.reconnect_attempts = 0
@@ -53,8 +55,8 @@ class HealthCheckManager:
 
     async def record_bar_received(self) -> None:
         """Record that a bar was successfully received."""
-        self.last_bar_timestamp = datetime.utcnow()
-        self.last_check = datetime.utcnow()
+        self.last_bar_timestamp = datetime.now(UTC)
+        self.last_check = datetime.now(UTC)
 
         # Reset error count on successful bar
         if self.connection_errors > 0:
@@ -64,8 +66,8 @@ class HealthCheckManager:
 
     async def record_order_submitted(self) -> None:
         """Record that an order was successfully submitted."""
-        self.last_order_timestamp = datetime.utcnow()
-        self.last_check = datetime.utcnow()
+        self.last_order_timestamp = datetime.now(UTC)
+        self.last_check = datetime.now(UTC)
 
     async def record_connection_error(self, error_message: str) -> None:
         """Record a connection error.
@@ -74,7 +76,7 @@ class HealthCheckManager:
             error_message: Description of the error
         """
         self.connection_errors += 1
-        self.last_check = datetime.utcnow()
+        self.last_check = datetime.now(UTC)
         logger.warning(
             f"Connection error #{self.connection_errors}: {error_message}"
         )
@@ -104,7 +106,7 @@ class HealthCheckManager:
 
         # Calculate exponential backoff delay
         delay = self.reconnect_base_delay * (2 ** self.reconnect_attempts)
-        elapsed = (datetime.utcnow() - self.last_reconnect_attempt).total_seconds()
+        elapsed = (datetime.now(UTC) - self.last_reconnect_attempt).total_seconds()
 
         return elapsed >= delay
 
@@ -122,7 +124,7 @@ class HealthCheckManager:
         Args:
             success: Whether the reconnect was successful.
         """
-        self.last_reconnect_attempt = datetime.utcnow()
+        self.last_reconnect_attempt = datetime.now(UTC)
 
         if success:
             self.reconnect_attempts = 0
@@ -144,7 +146,7 @@ class HealthCheckManager:
         if self.last_bar_timestamp is None:
             return True
 
-        elapsed = (datetime.utcnow() - self.last_bar_timestamp).total_seconds()
+        elapsed = (datetime.now(UTC) - self.last_bar_timestamp).total_seconds()
         is_stale = elapsed > stale_threshold_seconds
 
         if is_stale:
@@ -158,28 +160,18 @@ class HealthCheckManager:
     async def save_health_check(self) -> None:
         """Save current health status to database."""
         try:
-            query = """
-                INSERT INTO health_checks (
-                    broker, strategy, is_healthy,
-                    last_bar_timestamp, last_order_timestamp,
-                    connection_errors, checked_at
+            async with self.session_factory() as session:
+                health_check = HealthCheck(
+                    broker=self.broker,
+                    strategy=self.strategy,
+                    is_healthy=self.is_healthy,
+                    last_bar_timestamp=self.last_bar_timestamp,
+                    last_order_timestamp=self.last_order_timestamp,
+                    connection_errors=self.connection_errors,
+                    checked_at=datetime.now(UTC),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
-
-            async with self.conn.cursor() as cur:
-                await cur.execute(
-                    query,
-                    (
-                        self.broker,
-                        self.strategy,
-                        self.is_healthy,
-                        self.last_bar_timestamp,
-                        self.last_order_timestamp,
-                        self.connection_errors,
-                        datetime.utcnow()
-                    )
-                )
+                session.add(health_check)
+                await session.commit()
 
             logger.debug(
                 f"Health check saved - is_healthy: {self.is_healthy}, "
@@ -220,13 +212,13 @@ class HealthCheckManager:
 class HealthCheckRegistry:
     """Registry for managing multiple health checks (one per broker/strategy combo)."""
 
-    def __init__(self, conn: psycopg.AsyncConnection):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         """Initialize health check registry.
 
         Args:
-            conn: Async PostgreSQL connection
+            session_factory: Async sessionmaker factory
         """
-        self.conn = conn
+        self.session_factory = session_factory
         self._checks: Dict[str, HealthCheckManager] = {}
 
     def register(self, broker: str, strategy: str) -> HealthCheckManager:
@@ -241,7 +233,7 @@ class HealthCheckRegistry:
         """
         key = f"{broker}:{strategy}"
         if key not in self._checks:
-            self._checks[key] = HealthCheckManager(self.conn, broker, strategy)
+            self._checks[key] = HealthCheckManager(self.session_factory, broker, strategy)
             logger.info(f"Registered health check for {key}")
 
         return self._checks[key]

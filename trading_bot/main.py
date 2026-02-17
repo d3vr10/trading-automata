@@ -5,8 +5,6 @@ from typing import List, Optional
 from decimal import Decimal
 from datetime import datetime, time, UTC
 
-import psycopg
-
 from config.settings import load_settings
 from trading_bot.brokers.factory import BrokerFactory
 from trading_bot.brokers.base import Environment
@@ -20,6 +18,7 @@ from trading_bot.monitoring.logger import setup_logging, get_logger
 from trading_bot.monitoring.event_logger import init_event_logger, get_event_logger
 from trading_bot.utils.exceptions import TradingBotError
 from trading_bot.utils.strategy_warmer import warm_up_all_strategies
+from trading_bot.database.models import DatabaseConnection
 from trading_bot.database.repository import TradeRepository
 from trading_bot.database.health import HealthCheckRegistry
 from trading_bot.notifications.telegram_bot import TradingBotTelegram
@@ -49,7 +48,7 @@ class TradingBot:
         self.start_time = datetime.now(UTC)
 
         # Database components
-        self.db_conn: Optional[psycopg.AsyncConnection] = None
+        self.db: Optional[DatabaseConnection] = None
         self.trade_repo: Optional[TradeRepository] = None
         self.health_checks: Optional[HealthCheckRegistry] = None
         self._health_check_task: Optional[asyncio.Task] = None
@@ -149,18 +148,20 @@ class TradingBot:
                 max_portfolio_risk=Decimal(str(self.settings.max_portfolio_risk)),
             )
 
-            # Initialize database connection (async)
+            # Initialize database connection (async with pooling)
             logger.info("Connecting to database...")
             try:
-                self.db_conn = await psycopg.AsyncConnection.connect(
-                    self.settings.database_url
+                self.db = DatabaseConnection(
+                    database_url=self.settings.database_url,
+                    pool_size=self.settings.database_pool_size,
+                    max_overflow=self.settings.database_max_overflow,
                 )
-                self.trade_repo = TradeRepository(self.db_conn)
-                self.health_checks = HealthCheckRegistry(self.db_conn)
-                logger.info("✅ Connected to PostgreSQL database")
+                self.trade_repo = TradeRepository(self.db.session_factory)
+                self.health_checks = HealthCheckRegistry(self.db.session_factory)
+                logger.info("✅ Connected to PostgreSQL database with connection pooling")
 
                 # Initialize event logger for decision tracking
-                self.event_logger = init_event_logger(self.settings.database_url)
+                self.event_logger = init_event_logger(self.db.session_factory)
                 logger.info("✅ Event logger initialized")
 
                 # Record session start time
@@ -168,7 +169,7 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"Failed to connect to database: {e}")
                 logger.warning("Continuing without database - trade history will not be recorded")
-                self.db_conn = None
+                self.db = None
                 self.trade_repo = None
                 self.health_checks = None
                 self.event_logger = None
@@ -293,18 +294,21 @@ class TradingBot:
         This allows the CLI to calculate actual bot process uptime
         rather than database lifetime. Called after database is initialized.
         """
-        if not self.db_conn:
+        if not self.db:
             return
 
         try:
+            from trading_bot.database.models import BotSession
+
             # Record session start in bot_sessions table
-            query = """
-                INSERT INTO bot_sessions (session_id, started_at)
-                VALUES (%s, %s)
-            """
-            session_id = self.start_time.timestamp()  # Use timestamp as unique session ID
-            async with self.db_conn.cursor() as cur:
-                await cur.execute(query, (session_id, self.start_time))
+            session_id = int(self.start_time.timestamp())  # Use timestamp as unique session ID
+            async with self.db.session_factory() as session:
+                bot_session = BotSession(
+                    session_id=session_id,
+                    started_at=self.start_time,
+                )
+                session.add(bot_session)
+                await session.commit()
             logger.debug(f"Session started at {self.start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         except Exception as e:
             logger.warning(f"Failed to record session start: {e}")
@@ -454,7 +458,7 @@ class TradingBot:
         """
         # Log bar received to event logger
         if self.event_logger:
-            self.event_logger.log_bar_received(
+            await self.event_logger.log_bar_received(
                 symbol=bar.symbol,
                 strategy="all",
                 broker=self.settings.broker,
@@ -488,7 +492,7 @@ class TradingBot:
                     signals.append((strategy, signal))
                     # Log signal to event logger
                     if self.event_logger:
-                        self.event_logger.log_signal_generated(
+                        await self.event_logger.log_signal_generated(
                             symbol=signal.symbol,
                             strategy=strategy.name,
                             broker=self.settings.broker,
@@ -608,10 +612,10 @@ class TradingBot:
                 logger.error(f"Failed to save final health checks: {e}")
 
         # Close database connection
-        if self.db_conn:
+        if self.db:
             try:
-                await self.db_conn.aclose()
-                logger.info("Database connection closed")
+                await self.db.dispose()
+                logger.info("Database connection pool closed")
             except Exception as e:
                 logger.error(f"Error closing database connection: {e}")
 

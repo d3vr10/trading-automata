@@ -13,11 +13,13 @@ Usage:
 
 import logging
 import csv
+import math
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+import pandas as pd
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.historical import StockHistoricalDataClient
 from trading_bot.data.models import Bar
@@ -115,6 +117,9 @@ def load_bars_from_cache(symbol: str, num_bars: int = 100) -> List[Bar]:
 def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
     """Fetch bars from Alpaca API and save to cache.
 
+    Falls back to yfinance if Alpaca is unavailable (e.g., SIP restrictions,
+    network issues). This ensures cache can always be populated during Docker startup.
+
     Args:
         symbol: Stock symbol
         num_bars: Number of historical bars to fetch
@@ -122,6 +127,7 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
     Returns:
         List of Bar objects
     """
+    # Try Alpaca first
     try:
         logger.info(f"Fetching {num_bars} bars for {symbol} from Alpaca...")
 
@@ -149,8 +155,8 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
         bars_data = client.get_stock_bars(request)
 
         if symbol not in bars_data.df.index.get_level_values(0):
-            logger.warning(f"No data found for {symbol}")
-            return []
+            logger.warning(f"No data found for {symbol} on Alpaca")
+            raise ValueError(f"No data for {symbol}")
 
         symbol_data = bars_data.df.loc[symbol]
 
@@ -174,15 +180,175 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
 
         # Save to cache
         save_bars_to_cache(symbol, result)
+        logger.info(f"✅ Fetched {len(result)} bars from Alpaca for {symbol}")
 
         return result
 
-    except (ConnectionError, TimeoutError) as e:
-        logger.error(f"Connection error fetching {symbol} from Alpaca: {e}")
-        logger.error("⚠️  Alpaca unreachable - check VPN connection, network, and API credentials")
+    except Exception as alpaca_error:
+        logger.warning(f"Alpaca fetch failed for {symbol}: {alpaca_error}")
+        logger.info(f"Falling back to yfinance for {symbol}...")
+        return _fetch_from_yfinance(symbol, num_bars)
+
+
+def _fetch_from_yfinance(symbol: str, num_bars: int = 100) -> List[Bar]:
+    """Fetch historical bars from Yahoo Finance as fallback.
+
+    Used when Alpaca is unavailable (SIP restrictions, network issues, etc.)
+    This provides free, unrestricted access to historical data for testing.
+
+    Args:
+        symbol: Stock symbol
+        num_bars: Number of historical bars to fetch
+
+    Returns:
+        List of Bar objects
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.error("yfinance not installed. Install with: pip install yfinance")
         return []
+
+    try:
+        logger.info(f"Fetching {num_bars} bars for {symbol} from Yahoo Finance...")
+
+        # Download 1 year of daily data (more reliable than hourly)
+        # Daily bars are more stable and don't require SIP subscription
+        logger.info(f"Downloading 1 year of daily bars for {symbol}...")
+        logger.debug(f"yfinance version: {yf.__version__ if hasattr(yf, '__version__') else 'unknown'}")
+
+        data = yf.download(
+            symbol,
+            period="1y",
+            interval="1d",  # Daily bars instead of hourly (more reliable)
+            progress=False,
+            threads=False  # Disable threading to avoid issues
+        )
+
+        logger.debug(f"Download completed. Data type: {type(data)}")
+
+        if data is None:
+            logger.error(f"yfinance returned None for {symbol}")
+            return []
+
+        if data.empty:
+            logger.warning(f"yfinance returned empty dataframe for {symbol}")
+            return []
+
+        logger.debug(f"Data shape: {data.shape}")
+        logger.debug(f"Data columns: {data.columns.tolist()}")
+        logger.debug(f"Data index type: {type(data.index)}")
+        logger.debug(f"First row:\n{data.head(1)}")
+
+        # Ensure data has the expected columns
+        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        missing_cols = [col for col in required_cols if col not in data.columns]
+        if missing_cols:
+            logger.error(f"Data for {symbol} missing columns: {missing_cols}. Got: {data.columns.tolist()}")
+            return []
+
+        # Remove rows with any NaN values
+        initial_len = len(data)
+        data = data.dropna()
+        dropped = initial_len - len(data)
+        logger.info(f"Cleaned data: {initial_len} rows → {len(data)} rows (dropped {dropped} NaN rows)")
+
+        if len(data) == 0:
+            logger.error(f"No valid data remaining for {symbol} after removing NaN values")
+            return []
+
+        # Convert to Bar objects
+        bars = []
+        conversion_errors = []
+
+        # Handle MultiIndex columns from yfinance (columns are tuples like ('Open', 'SPY'))
+        has_multiindex = isinstance(data.columns, pd.MultiIndex)
+        logger.debug(f"MultiIndex columns: {has_multiindex}")
+        logger.debug(f"Data columns: {list(data.columns)}")
+        logger.debug(f"First few rows:\n{data.head(3)}")
+
+        for idx, (timestamp, row) in enumerate(data.iterrows()):
+            try:
+                logger.debug(f"Row {idx}: timestamp={timestamp}, row_type={type(row)}, row_values={dict(row)}")
+
+                # Access columns - handle both regular and MultiIndex columns
+                if has_multiindex:
+                    logger.debug(f"Using MultiIndex access for row {idx}")
+                    open_val = float(row[('Open', symbol)])
+                    high_val = float(row[('High', symbol)])
+                    low_val = float(row[('Low', symbol)])
+                    close_val = float(row[('Close', symbol)])
+                    volume_val = int(float(row[('Volume', symbol)]))  # Convert via float for safety
+                else:
+                    logger.debug(f"Using regular column access for row {idx}")
+                    open_val = float(row['Open'])
+                    high_val = float(row['High'])
+                    low_val = float(row['Low'])
+                    close_val = float(row['Close'])
+                    volume_val = int(float(row['Volume']))  # Convert via float for safety
+
+                logger.debug(f"Row {idx} converted: O={open_val}, H={high_val}, L={low_val}, C={close_val}, V={volume_val}")
+
+                # Validate data before Bar creation
+                if high_val < low_val:
+                    logger.warning(f"Row {idx}: High ({high_val}) < Low ({low_val}) - invalid OHLC")
+                if any(v < 0 for v in [open_val, high_val, low_val, close_val]):
+                    logger.warning(f"Row {idx}: Negative price detected - O={open_val}, H={high_val}, L={low_val}, C={close_val}")
+
+                bar = Bar(
+                    symbol=symbol,
+                    timestamp=timestamp.to_pydatetime() if hasattr(timestamp, 'to_pydatetime') else timestamp,
+                    open=Decimal(str(open_val)),
+                    high=Decimal(str(high_val)),
+                    low=Decimal(str(low_val)),
+                    close=Decimal(str(close_val)),
+                    volume=volume_val
+                )
+                bars.append(bar)
+            except ValueError as ve:
+                # Catch validation errors from Bar.__post_init__
+                import traceback
+                error_msg = f"Row {idx}: Validation error: {ve}"
+                logger.warning(f"Failed to convert row {idx} for {symbol}: {error_msg}")
+                logger.debug(f"Row {idx} traceback: {traceback.format_exc()}")
+                conversion_errors.append(error_msg)
+                continue
+            except Exception as e:
+                import traceback
+                error_msg = f"Row {idx}: {type(e).__name__}: {e}"
+                logger.warning(f"Failed to convert row {idx} for {symbol}: {error_msg}")
+                logger.debug(f"Row {idx} traceback: {traceback.format_exc()}")
+                conversion_errors.append(error_msg)
+                continue
+
+        logger.info(f"Converted {len(bars)}/{len(data)} rows for {symbol} ({100*len(bars)//len(data)}%)")
+
+        if conversion_errors:
+            logger.warning(f"⚠️  {len(conversion_errors)} rows failed to convert for {symbol}")
+            # Log first 3 errors as examples
+            for error in conversion_errors[:3]:
+                logger.warning(f"  Example failure: {error}")
+            if len(conversion_errors) > 3:
+                logger.warning(f"  ... and {len(conversion_errors) - 3} more errors")
+
+        # Sort and return last num_bars
+        bars.sort(key=lambda b: b.timestamp)
+        result = bars[-num_bars:] if len(bars) > num_bars else bars
+
+        logger.info(f"Returning {len(result)} bars for {symbol}")
+
+        # Save to cache
+        save_bars_to_cache(symbol, result)
+        logger.info(f"✅ Fetched {len(result)} daily bars from Yahoo Finance for {symbol}")
+
+        return result
+
     except Exception as e:
-        logger.error(f"Failed to fetch bars for {symbol}: {e}")
+        import traceback
+        logger.error(f"Failed to fetch bars from Yahoo Finance for {symbol}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception message: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         return []
 
 

@@ -1,29 +1,31 @@
-"""Trade repository using raw psycopg3 for database operations.
+"""Trade repository using SQLAlchemy ORM for database operations.
 
-Simple, fast, and API-ready. No ORM overhead.
+Uses async SQLAlchemy 2.0 with psycopg3 driver.
 """
 
 import logging
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
-import psycopg
-from psycopg import AsyncConnection
+from sqlalchemy import select, func, and_, case
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from trading_bot.database.models import Trade, Position
 
 logger = logging.getLogger(__name__)
 
 
 class TradeRepository:
-    """Handles all trade database operations with raw SQL."""
+    """Handles all trade database operations with SQLAlchemy ORM."""
 
-    def __init__(self, connection: AsyncConnection):
-        """Initialize repository with database connection.
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        """Initialize repository with async session factory.
 
         Args:
-            connection: Async psycopg connection
+            session_factory: Async sessionmaker factory
         """
-        self.conn = connection
+        self.session = session_factory
 
     async def record_trade_entry(
         self,
@@ -49,38 +51,23 @@ class TradeRepository:
         Returns:
             Trade ID for later reference
         """
-        query = """
-            INSERT INTO trades (
-                symbol, strategy, broker, entry_timestamp,
-                entry_price, entry_quantity, entry_order_id, notes
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-
         try:
-            # Use executemany or parameterized query with tuple of params
-            async with self.conn.cursor() as cur:
-                await cur.execute(
-                    query,
-                    (
-                        symbol,
-                        strategy,
-                        broker,
-                        datetime.now(UTC),
-                        float(entry_price),
-                        float(entry_quantity),
-                        entry_order_id,
-                        notes,
-                    )
+            async with self.session() as session:
+                trade = Trade(
+                    symbol=symbol,
+                    strategy=strategy,
+                    broker=broker,
+                    entry_timestamp=datetime.now(UTC),
+                    entry_price=entry_price,
+                    entry_quantity=entry_quantity,
+                    entry_order_id=entry_order_id,
+                    notes=notes,
                 )
-                result = await cur.fetchone()
-                trade_id = result[0]
-
-            # Commit the transaction to persist the insert
-            await self.conn.commit()
-            logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade_id})")
-            return trade_id
+                session.add(trade)
+                await session.commit()
+                await session.refresh(trade)
+                logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade.id})")
+                return trade.id
         except Exception as e:
             logger.error(f"Failed to record trade entry: {e}")
             raise
@@ -100,38 +87,34 @@ class TradeRepository:
             exit_quantity: Quantity exited
             exit_order_id: Optional order ID from broker
         """
-        query = """
-            UPDATE trades
-            SET
-                exit_timestamp = %s,
-                exit_price = %s,
-                exit_quantity = %s,
-                exit_order_id = %s,
-                gross_pnl = (%s - %s) * %s,
-                pnl_percent = ((%s - %s) / %s) * 100,
-                is_winning_trade = (%s > %s),
-                hold_duration_seconds = EXTRACT(EPOCH FROM (%s - entry_timestamp))::INTEGER
-            WHERE id = %s
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(
-                    query,
-                    (
-                        datetime.now(UTC),
-                        float(exit_price),
-                        float(exit_quantity),
-                        exit_order_id,
-                        float(exit_price),
-                        float(exit_price),  # Will be replaced with actual entry price
-                        trade_id,
-                    )
-                )
+            async with self.session() as session:
+                trade = await session.get(Trade, trade_id)
+                if not trade:
+                    logger.error(f"Trade not found: ID {trade_id}")
+                    return
 
-            # Commit the transaction to persist the update
-            await self.conn.commit()
-            logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
+                # Calculate P&L in Python (not SQL)
+                entry_price = Decimal(str(trade.entry_price))
+                gross_pnl = (exit_price - entry_price) * exit_quantity
+                pnl_percent = ((exit_price - entry_price) / entry_price) * 100 if entry_price != 0 else Decimal(0)
+
+                # Update trade with exit details
+                trade.exit_timestamp = datetime.now(UTC)
+                trade.exit_price = exit_price
+                trade.exit_quantity = exit_quantity
+                trade.exit_order_id = exit_order_id
+                trade.gross_pnl = gross_pnl
+                trade.pnl_percent = float(pnl_percent)
+                trade.is_winning_trade = gross_pnl > 0
+
+                # Calculate hold duration
+                if trade.entry_timestamp:
+                    hold_duration = datetime.now(UTC) - trade.entry_timestamp
+                    trade.hold_duration_seconds = int(hold_duration.total_seconds())
+
+                await session.commit()
+                logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
         except Exception as e:
             logger.error(f"Failed to record trade exit: {e}")
             raise
@@ -150,27 +133,45 @@ class TradeRepository:
             limit: Maximum trades to return
 
         Returns:
-            List of trade records
+            List of trade records as dictionaries
         """
-        query = """
-            SELECT
-                id, symbol, strategy, broker,
-                entry_timestamp, entry_price, entry_quantity,
-                exit_timestamp, exit_price, exit_quantity,
-                gross_pnl, pnl_percent, is_winning_trade,
-                hold_duration_seconds
-            FROM trades
-            WHERE symbol = %s
-              AND entry_timestamp > NOW() - INTERVAL '1 day' * %s
-            ORDER BY entry_timestamp DESC
-            LIMIT %s
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(query, (symbol, days, limit))
-                rows = await cur.fetchall()
-                return [dict(row) for row in rows]
+            async with self.session() as session:
+                cutoff_date = datetime.now(UTC) - timedelta(days=days)
+                stmt = (
+                    select(Trade)
+                    .where(
+                        and_(
+                            Trade.symbol == symbol,
+                            Trade.entry_timestamp > cutoff_date,
+                        )
+                    )
+                    .order_by(Trade.entry_timestamp.desc())
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                trades = result.scalars().all()
+
+                # Convert to dictionaries for compatibility
+                return [
+                    {
+                        'id': t.id,
+                        'symbol': t.symbol,
+                        'strategy': t.strategy,
+                        'broker': t.broker,
+                        'entry_timestamp': t.entry_timestamp,
+                        'entry_price': t.entry_price,
+                        'entry_quantity': t.entry_quantity,
+                        'exit_timestamp': t.exit_timestamp,
+                        'exit_price': t.exit_price,
+                        'exit_quantity': t.exit_quantity,
+                        'gross_pnl': t.gross_pnl,
+                        'pnl_percent': t.pnl_percent,
+                        'is_winning_trade': t.is_winning_trade,
+                        'hold_duration_seconds': t.hold_duration_seconds,
+                    }
+                    for t in trades
+                ]
         except Exception as e:
             logger.error(f"Failed to get trades for {symbol}: {e}")
             return []
@@ -189,26 +190,44 @@ class TradeRepository:
             limit: Maximum trades to return
 
         Returns:
-            List of trade records
+            List of trade records as dictionaries
         """
-        query = """
-            SELECT
-                id, symbol, strategy, broker,
-                entry_timestamp, entry_price, entry_quantity,
-                exit_timestamp, exit_price, exit_quantity,
-                gross_pnl, pnl_percent, is_winning_trade
-            FROM trades
-            WHERE strategy = %s
-              AND entry_timestamp > NOW() - INTERVAL '1 day' * %s
-            ORDER BY entry_timestamp DESC
-            LIMIT %s
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(query, (strategy, days, limit))
-                rows = await cur.fetchall()
-                return [dict(row) for row in rows]
+            async with self.session() as session:
+                cutoff_date = datetime.now(UTC) - timedelta(days=days)
+                stmt = (
+                    select(Trade)
+                    .where(
+                        and_(
+                            Trade.strategy == strategy,
+                            Trade.entry_timestamp > cutoff_date,
+                        )
+                    )
+                    .order_by(Trade.entry_timestamp.desc())
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                trades = result.scalars().all()
+
+                # Convert to dictionaries for compatibility
+                return [
+                    {
+                        'id': t.id,
+                        'symbol': t.symbol,
+                        'strategy': t.strategy,
+                        'broker': t.broker,
+                        'entry_timestamp': t.entry_timestamp,
+                        'entry_price': t.entry_price,
+                        'entry_quantity': t.entry_quantity,
+                        'exit_timestamp': t.exit_timestamp,
+                        'exit_price': t.exit_price,
+                        'exit_quantity': t.exit_quantity,
+                        'gross_pnl': t.gross_pnl,
+                        'pnl_percent': t.pnl_percent,
+                        'is_winning_trade': t.is_winning_trade,
+                    }
+                    for t in trades
+                ]
         except Exception as e:
             logger.error(f"Failed to get trades for strategy {strategy}: {e}")
             return []
@@ -227,52 +246,59 @@ class TradeRepository:
         Returns:
             Dictionary with metrics
         """
-        params = [days]
-        where_clause = "WHERE entry_timestamp > NOW() - INTERVAL '1 day' * %s AND exit_timestamp IS NOT NULL"
-
-        if strategy:
-            where_clause += " AND strategy = %s"
-            params.append(strategy)
-
-        query = f"""
-            SELECT
-                COUNT(*) as total_trades,
-                COUNT(CASE WHEN is_winning_trade = true THEN 1 END) as winning_trades,
-                COUNT(CASE WHEN is_winning_trade = false THEN 1 END) as losing_trades,
-                ROUND(
-                    COUNT(CASE WHEN is_winning_trade = true THEN 1 END)::NUMERIC
-                    / NULLIF(COUNT(*), 0) * 100, 2
-                ) as win_rate,
-                ROUND(SUM(CASE WHEN gross_pnl > 0 THEN gross_pnl ELSE 0 END)::NUMERIC, 2) as gross_profit,
-                ROUND(SUM(CASE WHEN gross_pnl < 0 THEN ABS(gross_pnl) ELSE 0 END)::NUMERIC, 2) as gross_loss,
-                ROUND(SUM(gross_pnl)::NUMERIC, 2) as net_profit,
-                ROUND(
-                    SUM(CASE WHEN gross_pnl > 0 THEN gross_pnl ELSE 0 END)::NUMERIC /
-                    NULLIF(SUM(CASE WHEN gross_pnl < 0 THEN ABS(gross_pnl) ELSE 0 END), 0), 2
-                ) as profit_factor
-            FROM trades
-            {where_clause}
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(query, tuple(params))
-                row = await cur.fetchone()
+            async with self.session() as session:
+                cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
-            if not row:
+                # Build query
+                stmt = select(Trade).where(
+                    and_(
+                        Trade.entry_timestamp > cutoff_date,
+                        Trade.exit_timestamp.isnot(None),
+                    )
+                )
+
+                if strategy:
+                    stmt = stmt.where(Trade.strategy == strategy)
+
+                result = await session.execute(stmt)
+                trades = result.scalars().all()
+
+                if not trades:
+                    return {
+                        'total_trades': 0,
+                        'winning_trades': 0,
+                        'losing_trades': 0,
+                        'win_rate': 0.0,
+                        'gross_profit': Decimal(0),
+                        'gross_loss': Decimal(0),
+                        'net_profit': Decimal(0),
+                        'profit_factor': 0.0,
+                    }
+
+                # Calculate metrics in Python
+                total_trades = len(trades)
+                winning_trades = sum(1 for t in trades if t.is_winning_trade)
+                losing_trades = total_trades - winning_trades
+
+                win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+
+                gross_profit = sum(t.gross_pnl for t in trades if t.gross_pnl and t.gross_pnl > 0)
+                gross_loss = sum(abs(t.gross_pnl) for t in trades if t.gross_pnl and t.gross_pnl < 0)
+                net_profit = sum(t.gross_pnl for t in trades if t.gross_pnl)
+
+                profit_factor = (float(gross_profit) / float(gross_loss)) if gross_loss > 0 else 0.0
+
                 return {
-                    'total_trades': 0,
-                    'winning_trades': 0,
-                    'losing_trades': 0,
-                    'win_rate': 0,
-                    'gross_profit': 0,
-                    'gross_loss': 0,
-                    'net_profit': 0,
-                    'profit_factor': 0,
+                    'total_trades': total_trades,
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'gross_profit': round(gross_profit, 2),
+                    'gross_loss': round(gross_loss, 2),
+                    'net_profit': round(net_profit, 2),
+                    'profit_factor': round(profit_factor, 2),
                 }
-
-            # Convert psycopg3 Row to dict
-            return dict(zip(row.keys(), row))
         except Exception as e:
             logger.error(f"Failed to get performance metrics: {e}")
             return {}
@@ -284,31 +310,36 @@ class TradeRepository:
             strategy: Filter by strategy (None for all)
 
         Returns:
-            List of open position records
+            List of open position records as dictionaries
         """
-        where_clause = "WHERE is_open = true"
-        params = []
-
-        if strategy:
-            where_clause += " AND strategy = %s"
-            params = [strategy]
-
-        query = f"""
-            SELECT
-                id, symbol, strategy, broker,
-                quantity, entry_price, current_price,
-                stop_loss, take_profit,
-                opened_at
-            FROM positions
-            {where_clause}
-            ORDER BY opened_at DESC
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(query, tuple(params) if params else ())
-                rows = await cur.fetchall()
-                return [dict(row) for row in rows]
+            async with self.session() as session:
+                stmt = select(Position).where(Position.is_open == True)
+
+                if strategy:
+                    stmt = stmt.where(Position.strategy == strategy)
+
+                stmt = stmt.order_by(Position.opened_at.desc())
+
+                result = await session.execute(stmt)
+                positions = result.scalars().all()
+
+                # Convert to dictionaries for compatibility
+                return [
+                    {
+                        'id': p.id,
+                        'symbol': p.symbol,
+                        'strategy': p.strategy,
+                        'broker': p.broker,
+                        'quantity': p.quantity,
+                        'entry_price': p.entry_price,
+                        'current_price': p.current_price,
+                        'stop_loss': p.stop_loss,
+                        'take_profit': p.take_profit,
+                        'opened_at': p.opened_at,
+                    }
+                    for p in positions
+                ]
         except Exception as e:
             logger.error(f"Failed to get open positions: {e}")
             return []
@@ -337,36 +368,23 @@ class TradeRepository:
         Returns:
             Position ID
         """
-        query = """
-            INSERT INTO positions (
-                symbol, strategy, broker, quantity, entry_price,
-                stop_loss, take_profit, is_open
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, true)
-            RETURNING id
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(
-                    query,
-                    (
-                        symbol,
-                        strategy,
-                        broker,
-                        float(quantity),
-                        float(entry_price),
-                        float(stop_loss) if stop_loss else None,
-                        float(take_profit) if take_profit else None,
-                    )
+            async with self.session() as session:
+                position = Position(
+                    symbol=symbol,
+                    strategy=strategy,
+                    broker=broker,
+                    quantity=quantity,
+                    entry_price=entry_price,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    is_open=True,
                 )
-                result = await cur.fetchone()
-                position_id = result[0]
-
-            # Commit the transaction to persist the insert
-            await self.conn.commit()
-            logger.info(f"Position recorded: {symbol} {quantity} (ID: {position_id})")
-            return position_id
+                session.add(position)
+                await session.commit()
+                await session.refresh(position)
+                logger.info(f"Position recorded: {symbol} {quantity} (ID: {position.id})")
+                return position.id
         except Exception as e:
             logger.error(f"Failed to record position: {e}")
             raise
@@ -378,22 +396,19 @@ class TradeRepository:
             position_id: Position ID
             realized_pnl: Realized P&L
         """
-        query = """
-            UPDATE positions
-            SET
-                is_open = false,
-                realized_pnl = %s,
-                closed_at = NOW()
-            WHERE id = %s
-        """
-
         try:
-            async with self.conn.cursor() as cur:
-                await cur.execute(query, (float(realized_pnl), position_id))
+            async with self.session() as session:
+                position = await session.get(Position, position_id)
+                if not position:
+                    logger.error(f"Position not found: ID {position_id}")
+                    return
 
-            # Commit the transaction to persist the update
-            await self.conn.commit()
-            logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
+                position.is_open = False
+                position.realized_pnl = realized_pnl
+                position.closed_at = datetime.now(UTC)
+
+                await session.commit()
+                logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
         except Exception as e:
             logger.error(f"Failed to close position: {e}")
             raise
