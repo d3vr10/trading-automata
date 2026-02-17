@@ -2,7 +2,7 @@ strategies:
   # Buy and hold strategy - simple example
   - name: "buy_hold_spy"
     class: "BuyAndHoldStrategy"
-    enabled: false
+    enabled: true
     symbols:
       - "SPY"
     parameters:
@@ -11,7 +11,7 @@ strategies:
   # Mean reversion strategy using Bollinger Bands
   - name: "mean_reversion_spy"
     class: "MeanReversionStrategy"
-    enabled: false
+    enabled: true
     symbols:
       - "SPY"
     parameters:
@@ -22,7 +22,7 @@ strategies:
   # Momentum strategy
   - name: "momentum_qqq"
     class: "MomentumStrategy"
-    enabled: false
+    enabled: true
     symbols:
       - "QQQ"
     parameters:
