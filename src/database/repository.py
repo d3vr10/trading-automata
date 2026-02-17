@@ -209,12 +209,12 @@ class TradeRepository:
         Returns:
             Dictionary with metrics
         """
-        where_clause = ""
         params = [days]
+        where_clause = "WHERE entry_timestamp > NOW() - INTERVAL '1 day' * %s AND exit_timestamp IS NOT NULL"
 
         if strategy:
-            where_clause = "WHERE strategy = $2"
-            params = [days, strategy]
+            where_clause += " AND strategy = %s"
+            params.append(strategy)
 
         query = f"""
             SELECT
@@ -234,13 +234,11 @@ class TradeRepository:
                 ) as profit_factor
             FROM trades
             {where_clause}
-              AND entry_timestamp > NOW() - INTERVAL '1 day' * $1
-              AND exit_timestamp IS NOT NULL
         """
 
         try:
-            result = await self.conn.execute(query, *params)
-            row = result[0] if result else None
+            result = await self.conn.execute(query, tuple(params))
+            row = await result.fetchone()
 
             if not row:
                 return {
