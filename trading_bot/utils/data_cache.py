@@ -20,8 +20,8 @@ from decimal import Decimal
 
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.timeframe import TimeFrame
 from trading_bot.data.models import Bar
+from trading_bot.data.alpaca_data import AlpacaDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +137,11 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
         end_date = datetime.now()
         start_date = end_date - timedelta(days=num_bars + 10)
 
+        # Use the timeframe parser from AlpacaDataProvider to get correct enum
+        timeframe = AlpacaDataProvider._parse_timeframe("1h")
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
-            timeframe=TimeFrame.One_Hour,
+            timeframe=timeframe,
             start=start_date,
             end=end_date,
         )
