@@ -4,7 +4,7 @@ Simple, fast, and API-ready. No ORM overhead.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
@@ -67,7 +67,7 @@ class TradeRepository:
                         symbol,
                         strategy,
                         broker,
-                        datetime.utcnow(),
+                        datetime.now(UTC),
                         float(entry_price),
                         float(entry_quantity),
                         entry_order_id,
@@ -76,8 +76,11 @@ class TradeRepository:
                 )
                 result = await cur.fetchone()
                 trade_id = result[0]
-                logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade_id})")
-                return trade_id
+
+            # Commit the transaction to persist the insert
+            await self.conn.commit()
+            logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade_id})")
+            return trade_id
         except Exception as e:
             logger.error(f"Failed to record trade entry: {e}")
             raise
@@ -116,7 +119,7 @@ class TradeRepository:
                 await cur.execute(
                     query,
                     (
-                        datetime.utcnow(),
+                        datetime.now(UTC),
                         float(exit_price),
                         float(exit_quantity),
                         exit_order_id,
@@ -125,7 +128,10 @@ class TradeRepository:
                         trade_id,
                     )
                 )
-                logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
+
+            # Commit the transaction to persist the update
+            await self.conn.commit()
+            logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
         except Exception as e:
             logger.error(f"Failed to record trade exit: {e}")
             raise
@@ -356,8 +362,11 @@ class TradeRepository:
                 )
                 result = await cur.fetchone()
                 position_id = result[0]
-                logger.info(f"Position recorded: {symbol} {quantity} (ID: {position_id})")
-                return position_id
+
+            # Commit the transaction to persist the insert
+            await self.conn.commit()
+            logger.info(f"Position recorded: {symbol} {quantity} (ID: {position_id})")
+            return position_id
         except Exception as e:
             logger.error(f"Failed to record position: {e}")
             raise
@@ -381,7 +390,10 @@ class TradeRepository:
         try:
             async with self.conn.cursor() as cur:
                 await cur.execute(query, (float(realized_pnl), position_id))
-                logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
+
+            # Commit the transaction to persist the update
+            await self.conn.commit()
+            logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
         except Exception as e:
             logger.error(f"Failed to close position: {e}")
             raise
