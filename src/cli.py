@@ -531,5 +531,67 @@ def events(limit, symbol, event_type, severity, watch):
     watch_command(_events, watch)
 
 
+@cli.command()
+def version():
+    """Show bot version."""
+    try:
+        import tomllib  # Python 3.11+
+    except ModuleNotFoundError:
+        import tomli as tomllib  # Fallback for older Python
+
+    try:
+        with open('pyproject.toml', 'rb') as f:
+            project_data = tomllib.load(f)
+            version_str = project_data.get('project', {}).get('version', 'unknown')
+    except FileNotFoundError:
+        version_str = 'unknown'
+
+    click.echo(f"\n{colored('🤖 Trading Bot Version', Colors.BOLD)}")
+    click.echo(colored('=' * 40, Colors.CYAN))
+    click.echo(f"Version: {colored(version_str, Colors.GREEN)}")
+    click.echo()
+
+
+@cli.command()
+def uptime():
+    """Show bot uptime and start time."""
+    async def _uptime():
+        conn = await get_db_connection()
+        try:
+            # Get the oldest event timestamp to determine when bot started
+            result = await conn.execute(
+                """
+                SELECT MIN(event_timestamp) as start_time
+                FROM trading_events
+                """
+            )
+            row = await result.fetchone()
+            start_time = row[0] if row and row[0] else None
+
+            click.echo(f"\n{colored('⏱️  Bot Uptime', Colors.BOLD)}")
+            click.echo(colored('=' * 50, Colors.CYAN))
+
+            if start_time:
+                now = datetime.utcnow()
+                uptime_delta = now - start_time
+                hours = uptime_delta.seconds // 3600
+                minutes = (uptime_delta.seconds % 3600) // 60
+                seconds = uptime_delta.seconds % 60
+                days = uptime_delta.days
+
+                click.echo(f"Started at: {colored(start_time.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
+                click.echo(f"Current time: {colored(now.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
+                click.echo(f"Uptime: {colored(f'{days}d {hours}h {minutes}m {seconds}s', Colors.GREEN)}")
+            else:
+                click.echo(colored("No events recorded yet - bot may have just started", Colors.YELLOW))
+
+            click.echo()
+
+        finally:
+            await conn.close()
+
+    asyncio.run(_uptime())
+
+
 if __name__ == '__main__':
     cli()
