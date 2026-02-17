@@ -38,6 +38,9 @@ def fetch_historical_bars(symbol: str, num_bars: int = 100, use_cache: bool = Tr
 def warm_up_strategy(strategy, symbol: str, num_bars: int = 100, use_cache: bool = True) -> bool:
     """Pre-load historical data into a strategy.
 
+    Feeds historical bars through the strategy's on_bar() method to properly
+    initialize internal indicators and state without generating recorded signals.
+
     Args:
         strategy: BaseStrategy instance
         symbol: Stock symbol to warm up
@@ -58,19 +61,17 @@ def warm_up_strategy(strategy, symbol: str, num_bars: int = 100, use_cache: bool
 
     logger.info(f"Fetched {len(bars)} historical bars for {symbol}")
 
-    # Initialize symbol history if needed
-    if symbol not in strategy.price_history:
-        strategy.price_history[symbol] = []
-        strategy.high_history[symbol] = []
-        strategy.low_history[symbol] = []
-        strategy.volume_history[symbol] = []
-
-    # Feed bars into strategy (without generating signals)
+    # Feed bars into strategy to initialize internal state
+    # This calls on_bar() for each bar, which initializes indicators and state,
+    # but we don't record or act on the signals during warm-up
     for bar in bars:
-        strategy.price_history[symbol].append(float(bar.close))
-        strategy.high_history[symbol].append(float(bar.high))
-        strategy.low_history[symbol].append(float(bar.low))
-        strategy.volume_history[symbol].append(int(bar.volume))
+        try:
+            # Call on_bar() to process the bar and populate strategy's internal state
+            # This initializes the strategy's indicators without recording signals
+            strategy.on_bar(bar)
+        except Exception as e:
+            logger.error(f"Error during warm-up for {symbol}: {e}")
+            return False
 
     logger.info(
         f"Strategy {strategy.name} warmed up with {len(bars)} bars. "
