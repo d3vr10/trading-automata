@@ -11,7 +11,7 @@ Provides commands to check:
 import asyncio
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Optional, Callable
 
@@ -522,12 +522,13 @@ def events(limit, symbol, event_type, severity, watch):
                 rows.append([
                     ts_str,
                     colored(sym or '-', Colors.BLUE),
+                    colored(strategy or '-', Colors.CYAN),
                     sev_colored,
                     event_type_str[:20],
                     msg[:50] + ('...' if len(msg) > 50 else ''),
                 ])
 
-            click.echo(tabulate(rows, headers=['Time', 'Symbol', 'Level', 'Type', 'Message'], tablefmt='simple'))
+            click.echo(tabulate(rows, headers=['Time', 'Symbol', 'Strategy', 'Level', 'Type', 'Message'], tablefmt='simple'))
             click.echo()
 
         finally:
@@ -579,7 +580,7 @@ def uptime():
             click.echo(colored('=' * 50, Colors.CYAN))
 
             if start_time:
-                now = datetime.utcnow()
+                now = datetime.now(UTC)
                 uptime_delta = now - start_time
                 hours = uptime_delta.seconds // 3600
                 minutes = (uptime_delta.seconds % 3600) // 60
