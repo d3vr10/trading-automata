@@ -64,18 +64,22 @@ def warm_up_strategy(strategy, symbol: str, num_bars: int = 100, use_cache: bool
     # Feed bars into strategy to initialize internal state
     # This calls on_bar() for each bar, which initializes indicators and state,
     # but we don't record or act on the signals during warm-up
-    for bar in bars:
+    signal_count = 0
+    for i, bar in enumerate(bars):
         try:
             # Call on_bar() to process the bar and populate strategy's internal state
             # This initializes the strategy's indicators without recording signals
-            strategy.on_bar(bar)
+            signal = strategy.on_bar(bar)
+            if signal:
+                signal_count += 1
+                logger.debug(f"  Bar {i+1}/{len(bars)}: Signal generated (not executed): {signal}")
         except Exception as e:
             logger.error(f"Error during warm-up for {symbol}: {e}")
             return False
 
     logger.info(
-        f"Strategy {strategy.name} warmed up with {len(bars)} bars. "
-        f"Ready to trade {symbol}!"
+        f"Strategy {strategy.name} warmed up: {len(bars)} bars processed, "
+        f"{signal_count} signals generated (discarded). Ready to trade {symbol}!"
     )
 
     return True
