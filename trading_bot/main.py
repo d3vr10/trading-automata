@@ -8,20 +8,20 @@ from datetime import datetime, time
 import psycopg
 
 from config.settings import load_settings
-from src.brokers.factory import BrokerFactory
-from src.brokers.base import Environment
-from src.data.alpaca_data import AlpacaDataProvider
-from src.data.models import Bar
-from src.strategies.registry import StrategyRegistry
-from src.strategies.base import BaseStrategy
-from src.portfolio.manager import PortfolioManager
-from src.execution.order_manager import OrderManager
-from src.monitoring.logger import setup_logging, get_logger
-from src.monitoring.event_logger import init_event_logger, get_event_logger
-from src.utils.exceptions import TradingBotError
-from src.database.repository import TradeRepository
-from src.database.health import HealthCheckRegistry
-from src.notifications.telegram_bot import TradingBotTelegram
+from trading_bot.brokers.factory import BrokerFactory
+from trading_bot.brokers.base import Environment
+from trading_bot.data.alpaca_data import AlpacaDataProvider
+from trading_bot.data.models import Bar
+from trading_bot.strategies.registry import StrategyRegistry
+from trading_bot.strategies.base import BaseStrategy
+from trading_bot.portfolio.manager import PortfolioManager
+from trading_bot.execution.order_manager import OrderManager
+from trading_bot.monitoring.logger import setup_logging, get_logger
+from trading_bot.monitoring.event_logger import init_event_logger, get_event_logger
+from trading_bot.utils.exceptions import TradingBotError
+from trading_bot.database.repository import TradeRepository
+from trading_bot.database.health import HealthCheckRegistry
+from trading_bot.notifications.telegram_bot import TradingBotTelegram
 
 
 logger = get_logger(__name__)
@@ -43,6 +43,9 @@ class TradingBot:
         self.portfolio_manager = None
         self.strategies = []
         self._running = False
+
+        # Session tracking - records when this bot process started
+        self.start_time = datetime.utcnow()
 
         # Database components
         self.db_conn: Optional[psycopg.AsyncConnection] = None
@@ -158,6 +161,9 @@ class TradingBot:
                 # Initialize event logger for decision tracking
                 self.event_logger = init_event_logger(self.settings.database_url)
                 logger.info("✅ Event logger initialized")
+
+                # Record session start time
+                await self._record_session_start()
             except Exception as e:
                 logger.error(f"Failed to connect to database: {e}")
                 logger.warning("Continuing without database - trade history will not be recorded")
@@ -170,7 +176,8 @@ class TradingBot:
             logger.info("Initializing Telegram bot...")
             self.telegram_bot = TradingBotTelegram(
                 self.settings.telegram_token,
-                self.settings.telegram_chat_id
+                self.settings.telegram_chat_id,
+                database_url=self.settings.database_url
             )
             telegram_ready = await self.telegram_bot.initialize()
             if telegram_ready:
@@ -258,15 +265,37 @@ class TradingBot:
 
     def _register_strategies(self) -> None:
         """Register all available strategy classes."""
-        from src.strategies.examples.buy_and_hold import BuyAndHoldStrategy
-        from src.strategies.examples.mean_reversion import MeanReversionStrategy
-        from src.strategies.examples.momentum import MomentumStrategy
-        from src.strategies.examples.rsi_atr_trend import RSIATRTrendStrategy
+        from trading_bot.strategies.examples.buy_and_hold import BuyAndHoldStrategy
+        from trading_bot.strategies.examples.mean_reversion import MeanReversionStrategy
+        from trading_bot.strategies.examples.momentum import MomentumStrategy
+        from trading_bot.strategies.examples.rsi_atr_trend import RSIATRTrendStrategy
 
         StrategyRegistry.register('BuyAndHoldStrategy', BuyAndHoldStrategy)
         StrategyRegistry.register('MeanReversionStrategy', MeanReversionStrategy)
         StrategyRegistry.register('MomentumStrategy', MomentumStrategy)
         StrategyRegistry.register('RSIATRTrendStrategy', RSIATRTrendStrategy)
+
+    async def _record_session_start(self) -> None:
+        """Record the current bot session start time to database.
+
+        This allows the CLI to calculate actual bot process uptime
+        rather than database lifetime. Called after database is initialized.
+        """
+        if not self.db_conn:
+            return
+
+        try:
+            # Record session start in bot_sessions table
+            query = """
+                INSERT INTO bot_sessions (session_id, started_at)
+                VALUES (%s, %s)
+            """
+            session_id = self.start_time.timestamp()  # Use timestamp as unique session ID
+            await self.db_conn.execute(query, (session_id, self.start_time))
+            await self.db_conn.commit()
+            logger.debug(f"Session started at {self.start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        except Exception as e:
+            logger.warning(f"Failed to record session start: {e}")
 
     def _get_all_symbols(self) -> List[str]:
         """Get all symbols from all strategies.
@@ -391,10 +420,10 @@ class TradingBot:
                 # Refresh portfolio state
                 self.portfolio_manager.refresh_state()
 
-                # Periodically save health checks (every 5 minutes)
+                # Periodically save health checks (configurable interval, default 5 minutes)
                 if self.health_checks and (
                     datetime.utcnow() - self._last_health_check_save
-                ).total_seconds() >= 300:
+                ).total_seconds() >= self.settings.health_check_interval:
                     await self.health_checks.save_all()
                     self._last_health_check_save = datetime.utcnow()
 

@@ -47,7 +47,7 @@ sudo -u postgres createdb trading_bot
 cd /home/d3vr10/Documents/Projects/trading-bot
 
 # Initialize database schema
-python -m src.database.init
+python -m trading_bot.database.init
 
 # Expected output:
 # ✅ Connected to PostgreSQL
@@ -74,7 +74,7 @@ cat .env | grep DATABASE
 
 ```bash
 # Alpaca paper trading (recommended for testing)
-BROKER=alpaca TRADING_ENV=paper python -m src.main
+BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
 
 # Expected output:
 # INFO | Loading configuration...
@@ -193,7 +193,7 @@ psql -U postgres -l | grep trading_bot
 psql -U postgres -c "CREATE DATABASE trading_bot;"
 
 # Then initialize schema
-python -m src.database.init
+python -m trading_bot.database.init
 ```
 
 ### Issue: "Failed to connect to database" in bot
@@ -263,7 +263,7 @@ TRADING_ENV=live
 # Get live API keys from https://app.alpaca.markets/
 
 # Run bot
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### 4. Add Alerts (Week 2)

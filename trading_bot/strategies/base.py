@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from decimal import Decimal
 
-from src.data.models import Bar, Quote, Trade
-from src.monitoring.event_logger import EventLogger
+from trading_bot.data.models import Bar, Quote, Trade
+from trading_bot.monitoring.event_logger import EventLogger
 
 
 @dataclass

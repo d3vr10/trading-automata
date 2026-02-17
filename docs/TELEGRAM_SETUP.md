@@ -140,7 +140,7 @@ This installs `python-telegram-bot>=21.0` which handles all Telegram communicati
 ## Step 5: Start Your Bot
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 You should see:
@@ -399,10 +399,10 @@ You can run multiple trading bots with different Telegram bots:
 
 ```bash
 # Bot 1: Alpaca paper trading
-TELEGRAM_TOKEN=token1 TELEGRAM_CHAT_ID=123 python -m src.main
+TELEGRAM_TOKEN=token1 TELEGRAM_CHAT_ID=123 python -m trading_bot.main
 
 # Bot 2: Coinbase live trading (different terminal)
-TELEGRAM_TOKEN=token2 TELEGRAM_CHAT_ID=123 python -m src.main &
+TELEGRAM_TOKEN=token2 TELEGRAM_CHAT_ID=123 python -m trading_bot.main &
 ```
 
 Each bot sends to its own Telegram bot, but same chat ID.

@@ -28,15 +28,17 @@ logger = logging.getLogger(__name__)
 class TradingBotTelegram:
     """Telegram bot interface for trading bot management."""
 
-    def __init__(self, token: str, chat_id: str):
+    def __init__(self, token: str, chat_id: str, database_url: Optional[str] = None):
         """Initialize Telegram bot.
 
         Args:
             token: Telegram bot token from BotFather
             chat_id: Telegram chat ID to send messages to
+            database_url: PostgreSQL connection URL for accessing bot data
         """
         self.token = token
         self.chat_id = chat_id
+        self.database_url = database_url
         self.application: Optional[Application] = None
         self._bot = None
 
@@ -318,15 +320,56 @@ Trading has been resumed. The bot will resume executing trades.
 
     async def _cmd_uptime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /uptime command."""
-        message = """⏱️ <b>Bot Uptime</b>
+        if not self.database_url:
+            message = """⏱️ <b>Bot Uptime</b>
 
-<i>Uptime calculation requires database connection.</i>
-<i>Please use CLI command: python -m src.cli uptime</i>
-
-<b>Placeholder:</b>
-Uptime will be displayed when integrated with main bot
+Database not configured - cannot retrieve uptime.
 """
-        await update.message.reply_html(message)
+            await update.message.reply_html(message)
+            return
+
+        try:
+            import psycopg
+            conn = await psycopg.AsyncConnection.connect(self.database_url)
+
+            # Get latest bot session start time
+            result = await conn.execute(
+                """
+                SELECT started_at
+                FROM bot_sessions
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            )
+            row = await result.fetchone()
+            await conn.close()
+
+            if row and row[0]:
+                start_time = row[0]
+                now = datetime.utcnow()
+                uptime_delta = now - start_time
+                hours = uptime_delta.seconds // 3600
+                minutes = (uptime_delta.seconds % 3600) // 60
+                seconds = uptime_delta.seconds % 60
+                days = uptime_delta.days
+
+                message = f"""⏱️ <b>Bot Uptime</b>
+
+<b>Started at:</b> {start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}
+<b>Current time:</b> {now.strftime('%Y-%m-%d %H:%M:%S UTC')}
+<b>Uptime:</b> {days}d {hours}h {minutes}m {seconds}s
+"""
+            else:
+                message = """⏱️ <b>Bot Uptime</b>
+
+No bot session found - bot may not have started yet.
+"""
+
+            await update.message.reply_html(message)
+        except Exception as e:
+            logger.error(f"Failed to get uptime: {e}")
+            message = f"Error retrieving uptime: {str(e)}"
+            await update.message.reply_text(message)
 
     async def start(self) -> None:
         """Start the bot polling (background task)."""

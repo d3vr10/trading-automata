@@ -40,7 +40,7 @@ docker exec trading-bot-db createdb -U postgres trading_bot
 
 ```bash
 # From project root
-python -m src.database.init
+python -m trading_bot.database.init
 ```
 
 Expected output:
@@ -56,7 +56,7 @@ Expected output:
 **Option A: Environment Variable**
 ```bash
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trading_bot"
-python -m src.main
+python -m trading_bot.main
 ```
 
 **Option B: .env File**
@@ -172,7 +172,7 @@ Indexed on: broker, checked_at
 The `TradeRepository` class provides methods for database operations:
 
 ```python
-from src.database import TradeRepository
+from trading_bot.database import TradeRepository
 import psycopg
 
 # Connect
@@ -281,7 +281,7 @@ The database is designed to be API-ready. When you're ready to build an API:
 
 # Example FastAPI endpoint
 from fastapi import FastAPI
-from src.database import TradeRepository
+from trading_bot.database import TradeRepository
 
 app = FastAPI()
 
@@ -356,7 +356,7 @@ docker start trading-bot-db      # Docker
 ### "database trading_bot does not exist"
 ```bash
 createdb -U postgres trading_bot
-python -m src.database.init
+python -m trading_bot.database.init
 ```
 
 ### Connection Pool Exhausted

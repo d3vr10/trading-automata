@@ -34,7 +34,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
 ### 2. Trade Repository API
 
 ```python
-from src.database import TradeRepository
+from trading_bot.database import TradeRepository
 
 # Record trade entry
 trade_id = await repo.record_trade_entry(
@@ -76,7 +76,7 @@ positions = await repo.get_open_positions(strategy="rsi_atr_trend")
 - Automatic persistence to database
 
 ```python
-from src.database import HealthCheckManager
+from trading_bot.database import HealthCheckManager
 
 # Create health check
 check = HealthCheckManager(conn, broker='alpaca', strategy='rsi_atr_trend')
@@ -157,7 +157,7 @@ docker run -d \
   postgres:15
 
 # Create tables
-python -m src.database.init
+python -m trading_bot.database.init
 
 # Expected output:
 # ✅ Connected to PostgreSQL
@@ -177,7 +177,7 @@ DATABASE_MAX_OVERFLOW=20
 ### 3. Run Trading Bot
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 **Bot will:**
@@ -290,7 +290,7 @@ docker exec trading-bot-db psql -U postgres -d trading_bot \
   -f /path/to/database/init.sql
 
 # Run bot
-BROKER=alpaca TRADING_ENV=paper python -m src.main
+BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
 ```
 
 ### Production Best Practices
@@ -367,6 +367,6 @@ Ready for:
 - Performance analysis
 - Future API exposure
 
-**Next Step:** Run `python -m src.main` with PostgreSQL running!
+**Next Step:** Run `python -m trading_bot.main` with PostgreSQL running!
 
 🚀 Let's trade!

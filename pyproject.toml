@@ -18,7 +18,15 @@ dependencies = [
 ]
 
 [project.scripts]
-trading-cli = "src.cli:cli"
+trading-cli = "trading_bot.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trading_bot*", "config*"]
+exclude = ["tests*", "*.tests*"]
+
+[tool.setuptools.package-data]
+config = ["*.yml", "*.yaml"]
 
 [tool.black]
 line-length = 88
@@ -39,4 +47,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=src --cov-report=html --cov-report=term"
+addopts = "-v --cov=trading_bot --cov-report=html --cov-report=term"

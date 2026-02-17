@@ -20,8 +20,8 @@ import psycopg
 from tabulate import tabulate
 
 from config.settings import load_settings
-from src.database.health import HealthCheckRegistry
-from src.database.repository import TradeRepository
+from trading_bot.database.health import HealthCheckRegistry
+from trading_bot.database.repository import TradeRepository
 
 
 # Color codes for terminal output
@@ -558,11 +558,13 @@ def uptime():
     async def _uptime():
         conn = await get_db_connection()
         try:
-            # Get the oldest event timestamp to determine when bot started
+            # Get the latest bot session start time (actual process start, not database lifetime)
             result = await conn.execute(
                 """
-                SELECT MIN(event_timestamp) as start_time
-                FROM trading_events
+                SELECT started_at
+                FROM bot_sessions
+                ORDER BY started_at DESC
+                LIMIT 1
                 """
             )
             row = await result.fetchone()
@@ -583,7 +585,7 @@ def uptime():
                 click.echo(f"Current time: {colored(now.strftime('%Y-%m-%d %H:%M:%S UTC'), Colors.BLUE)}")
                 click.echo(f"Uptime: {colored(f'{days}d {hours}h {minutes}m {seconds}s', Colors.GREEN)}")
             else:
-                click.echo(colored("No events recorded yet - bot may have just started", Colors.YELLOW))
+                click.echo(colored("No bot session found - bot may not have started yet", Colors.YELLOW))
 
             click.echo()
 

@@ -54,21 +54,21 @@ Choose one of these methods:
 ```bash
 export ALPACA_API_KEY="your_key"
 export ALPACA_SECRET_KEY="your_secret"
-python -m src.main
+python -m trading_bot.main
 ```
 
 **Option B: .env File**
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
-python -m src.main
+python -m trading_bot.main
 ```
 
 **Option C: config.yml + Environment Variables**
 ```bash
 # Edit config/config.yml for defaults
 # Create .env for overrides
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### 4. Configure Database (Optional)
@@ -110,7 +110,7 @@ strategies:
 ### 6. Run the Bot
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 Monitor logs:
@@ -120,9 +120,9 @@ tail -f logs/trading_bot.log
 
 Check bot status with CLI:
 ```bash
-python -m src.cli status              # Overall status
-python -m src.cli trades              # Trade history
-python -m src.cli events --limit 50   # Recent events
+python -m trading_bot.cli status              # Overall status
+python -m trading_bot.cli trades              # Trade history
+python -m trading_bot.cli events --limit 50   # Recent events
 ```
 
 ## Project Structure
@@ -145,7 +145,7 @@ trading-bot/
 │   ├── DOCKER_SETUP.md         # Docker Compose deployment
 │   ├── TELEGRAM_SETUP.md       # Telegram notifications
 │   └── EUR_USD_STRATEGY.md     # EUR/USD strategy example
-├── src/
+├── trading_bot/                 # Main package
 │   ├── main.py                 # Bot orchestrator
 │   ├── cli.py                  # Command-line interface
 │   ├── brokers/
@@ -171,6 +171,7 @@ trading-bot/
 │   │   └── order_manager.py    # Order execution
 │   ├── database/
 │   │   ├── health.py           # Health monitoring
+│   │   ├── init.py             # Database initialization
 │   │   └── connection.py       # Database connection management
 │   ├── monitoring/
 │   │   ├── logger.py           # Logging setup
@@ -220,7 +221,7 @@ TRADING_ENV=live
 ```bash
 # Result
 export LOG_LEVEL=CRITICAL
-python -m src.main
+python -m trading_bot.main
 # trading_environment: live (from .env overrides config.yml)
 # log_level: CRITICAL (from environment overrides .env)
 ```
@@ -285,10 +286,10 @@ Change configuration without touching code:
 
 ```bash
 # Paper trading
-TRADING_ENV=paper python -m src.main
+TRADING_ENV=paper python -m trading_bot.main
 
 # Live trading (use live credentials!)
-TRADING_ENV=live python -m src.main
+TRADING_ENV=live python -m trading_bot.main
 ```
 
 Or edit `.env`:
@@ -309,8 +310,8 @@ ALPACA_SECRET_KEY=...
 Create a new strategy by inheriting from `BaseStrategy`:
 
 ```python
-from src.strategies.base import BaseStrategy, Signal
-from src.data.models import Bar, Quote
+from trading_bot.strategies.base import BaseStrategy, Signal
+from trading_bot.data.models import Bar, Quote
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
@@ -343,7 +344,7 @@ Register your strategy in `src/main.py`:
 ```python
 def _register_strategies(self) -> None:
     # ... existing registrations
-    from src.strategies.examples.my_strategy import MyStrategy
+    from trading_bot.strategies.examples.my_strategy import MyStrategy
     StrategyRegistry.register('MyStrategy', MyStrategy)
 ```
 
@@ -429,22 +430,22 @@ The bot includes a command-line interface for checking status and debugging:
 
 ```bash
 # Overall bot status
-python -m src.cli status
+python -m trading_bot.cli status
 
 # View recent trades
-python -m src.cli trades --limit 10
+python -m trading_bot.cli trades --limit 10
 
 # View trading events and decisions
-python -m src.cli events --limit 50
+python -m trading_bot.cli events --limit 50
 
 # View specific event types
-python -m src.cli events --type BAR_RECEIVED --symbol SPY
+python -m trading_bot.cli events --type BAR_RECEIVED --symbol SPY
 
 # View performance metrics
-python -m src.cli metrics
+python -m trading_bot.cli metrics
 
 # Check database health
-python -m src.cli health
+python -m trading_bot.cli health
 ```
 
 ### Web Dashboards

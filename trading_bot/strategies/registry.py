@@ -4,7 +4,7 @@ import yaml
 from pathlib import Path
 
 from .base import BaseStrategy
-from src.monitoring.event_logger import EventLogger
+from trading_bot.monitoring.event_logger import EventLogger
 
 
 logger = logging.getLogger(__name__)

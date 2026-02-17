@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     telegram_token: str = Field('', env='TELEGRAM_TOKEN')
     telegram_chat_id: str = Field('', env='TELEGRAM_CHAT_ID')
 
+    # Health check configuration
+    health_check_interval: int = Field(300, env='HEALTH_CHECK_INTERVAL')
+
     class Config:
         env_file = '.env'
         env_file_encoding = 'utf-8'

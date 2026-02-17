@@ -257,7 +257,7 @@ docker-compose -f docker/docker-compose.yml ps
 **Solution:**
 ```bash
 # Initialize database schema
-docker exec trading-bot python -m src.database.init
+docker exec trading-bot python -m trading_bot.database.init
 
 # Verify tables
 docker exec trading-bot-db psql -U postgres -d trading_bot -c "\dt"

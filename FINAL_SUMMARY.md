@@ -81,7 +81,7 @@ trading-bot/
 ### Precedence (Highest to Lowest)
 1. **OS Environment Variables** - Highest priority
    ```bash
-   TRADING_ENV=live python -m src.main
+   TRADING_ENV=live python -m trading_bot.main
    ```
 
 2. **.env File** - Second priority
@@ -213,10 +213,10 @@ position_size: 5
 ### Method 1: Environment Variable
 ```bash
 # Paper
-TRADING_ENV=paper python -m src.main
+TRADING_ENV=paper python -m trading_bot.main
 
 # Live
-TRADING_ENV=live python -m src.main
+TRADING_ENV=live python -m trading_bot.main
 ```
 
 ### Method 2: .env File
@@ -252,7 +252,7 @@ cp .env.example .env
 nano .env  # Add dev credentials
 
 # Run
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### Scenario 2: Docker Development
@@ -274,7 +274,7 @@ export LOG_LEVEL="INFO"
 export MAX_POSITION_SIZE="0.05"  # Conservative
 
 # Run with monitoring
-python -m src.main &> logs/trading_bot.log &
+python -m trading_bot.main &> logs/trading_bot.log &
 ```
 
 ### Scenario 4: Docker Production
@@ -332,8 +332,8 @@ Check:
 ### 1. Create Strategy File
 ```python
 # src/strategies/examples/my_strategy.py
-from src.strategies.base import BaseStrategy, Signal
-from src.data.models import Bar, Quote
+from trading_bot.strategies.base import BaseStrategy, Signal
+from trading_bot.data.models import Bar, Quote
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
@@ -362,7 +362,7 @@ class MyStrategy(BaseStrategy):
 ### 2. Register Strategy
 ```python
 # src/main.py, in _register_strategies()
-from src.strategies.examples.my_strategy import MyStrategy
+from trading_bot.strategies.examples.my_strategy import MyStrategy
 StrategyRegistry.register('MyStrategy', MyStrategy)
 ```
 

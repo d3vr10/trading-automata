@@ -90,7 +90,7 @@ ALPACA_SECRET_KEY=...
 # Run bot
 docker-compose up
 # or
-python -m src.main
+python -m trading_bot.main
 ```
 
 **What Happens:**
@@ -454,7 +454,7 @@ docker-compose -f docker-compose-multi.yml logs -f trading-bot-coinbase
 
 1. **Test on Alpaca Paper:**
    ```bash
-   BROKER=alpaca TRADING_ENV=paper python -m src.main
+   BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
    ```
 
 2. **Run for 2+ weeks:**
@@ -468,7 +468,7 @@ docker-compose -f docker-compose-multi.yml logs -f trading-bot-coinbase
 
 4. **Switch to Coinbase Live:**
    ```bash
-   BROKER=coinbase TRADING_ENV=live COINBASE_API_KEY=... python -m src.main
+   BROKER=coinbase TRADING_ENV=live COINBASE_API_KEY=... python -m trading_bot.main
    ```
 
 **Ready to scale your trading across platforms!** 🚀

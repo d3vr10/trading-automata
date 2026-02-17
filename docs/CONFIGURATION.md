@@ -50,7 +50,7 @@ export LOG_LEVEL="INFO"
 Run bot:
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### Method 2: .env File
@@ -106,7 +106,7 @@ ALPACA_SECRET_KEY=dev_secret
 Environment variable override:
 
 ```bash
-TRADING_ENV=live python -m src.main
+TRADING_ENV=live python -m trading_bot.main
 ```
 
 ## Configuration Options
@@ -225,7 +225,7 @@ ALPACA_SECRET_KEY=...   # LIVE trading secret
 The bot validates configuration on startup:
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 If configuration is invalid, you'll see errors like:
@@ -254,7 +254,7 @@ LOG_FILE=logs/trading_bot.log
 TRADING_ENV=paper \
 LOG_LEVEL=INFO \
 STRATEGY_CONFIG_PATH=config/strategies.test.yaml \
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### Production
@@ -309,7 +309,7 @@ ValueError: Strategy config file not found: config/strategies.yaml
 **Solution:**
 ```bash
 ls config/strategies.yaml  # Verify file exists
-STRATEGY_CONFIG_PATH=./config/strategies.yaml python -m src.main
+STRATEGY_CONFIG_PATH=./config/strategies.yaml python -m trading_bot.main
 ```
 
 ### Missing required settings
@@ -363,12 +363,12 @@ export TRADING_ENV=paper  # Only 'paper' or 'live'
 
 5. **Validate on startup**
    ```bash
-   python -m src.main  # Will fail if config is invalid
+   python -m trading_bot.main  # Will fail if config is invalid
    ```
 
 6. **Use specific config paths for different environments**
    ```bash
-   CONFIG_FILE_PATH=config/config.prod.yml python -m src.main
+   CONFIG_FILE_PATH=config/config.prod.yml python -m trading_bot.main
    ```
 
 ## Configuration Files Reference

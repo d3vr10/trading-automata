@@ -329,7 +329,7 @@ On exit → save final checks
 ### Pre-Launch Checklist
 
 - [ ] PostgreSQL running and accessible
-- [ ] Database schema initialized (`python -m src.database.init`)
+- [ ] Database schema initialized (`python -m trading_bot.database.init`)
 - [ ] .env configured with correct DATABASE_URL
 - [ ] Broker credentials configured (ALPACA_API_KEY, etc.)
 - [ ] Test database connection works (`psql ...`)
@@ -503,7 +503,7 @@ On exit → save final checks
 | Issue | Solution |
 |-------|----------|
 | DB connection refused | Start PostgreSQL, check DATABASE_URL |
-| Table doesn't exist | Run `python -m src.database.init` |
+| Table doesn't exist | Run `python -m trading_bot.database.init` |
 | Health checks not saving | Check database permissions, connection |
 | No trades recorded | Check strategy is generating signals |
 | Stale data warning | Check WebSocket connection to broker |
@@ -546,7 +546,7 @@ On exit → save final checks
 
 All Week 1 production features implemented and integrated.
 
-**Start trading:** `python -m src.main`
+**Start trading:** `python -m trading_bot.main`
 
 Questions? Check the documentation files or review the code.
 

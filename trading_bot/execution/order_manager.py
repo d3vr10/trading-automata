@@ -3,8 +3,8 @@ from typing import Dict, Optional, List
 from decimal import Decimal
 from datetime import datetime
 
-from src.brokers.base import IBroker
-from src.strategies.base import Signal
+from trading_bot.brokers.base import IBroker
+from trading_bot.strategies.base import Signal
 
 
 logger = logging.getLogger(__name__)

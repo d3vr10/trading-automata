@@ -367,7 +367,7 @@ Build REST API on top of database:
 
 ```python
 from fastapi import FastAPI
-from src.database import TradeRepository
+from trading_bot.database import TradeRepository
 
 app = FastAPI()
 

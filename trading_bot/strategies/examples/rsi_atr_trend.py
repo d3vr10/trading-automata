@@ -5,9 +5,9 @@ from collections import deque
 import pandas as pd
 import pandas_ta as ta
 
-from src.strategies.base import BaseStrategy, Signal
-from src.data.models import Bar, Quote
-from src.monitoring.event_logger import EventLogger
+from trading_bot.strategies.base import BaseStrategy, Signal
+from trading_bot.data.models import Bar, Quote
+from trading_bot.monitoring.event_logger import EventLogger
 
 
 logger = logging.getLogger(__name__)

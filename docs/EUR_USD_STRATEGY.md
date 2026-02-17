@@ -303,7 +303,7 @@ Edit `config/strategies.yaml`:
 ### Step 4: Run Bot
 
 ```bash
-python -m src.main
+python -m trading_bot.main
 ```
 
 Monitor logs:

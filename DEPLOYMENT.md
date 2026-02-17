@@ -33,14 +33,14 @@ The bot uses a **3-level configuration hierarchy** with environment variables ha
 
 ### Level 1: Environment Variables (Highest Priority)
 ```bash
-TRADING_ENV=live ALPACA_API_KEY=pk_... python -m src.main
+TRADING_ENV=live ALPACA_API_KEY=pk_... python -m trading_bot.main
 ```
 
 ### Level 2: .env File
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### Level 3: config.yml File
@@ -178,7 +178,7 @@ docker-compose logs -f
 pip install -r requirements.txt
 cp .env.example .env
 nano .env  # Add credentials
-python -m src.main
+python -m trading_bot.main
 ```
 
 ### Option 3: With config.yml
@@ -186,7 +186,7 @@ python -m src.main
 # Edit config/config.yml for defaults
 # Edit .env for overrides
 # Environment variables override everything
-python -m src.main
+python -m trading_bot.main
 ```
 
 ## Monitoring

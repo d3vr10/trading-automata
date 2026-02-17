@@ -2,9 +2,9 @@ import logging
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
 
-from src.brokers.base import IBroker
-from src.execution.order_manager import OrderManager
-from src.strategies.base import Signal
+from trading_bot.brokers.base import IBroker
+from trading_bot.execution.order_manager import OrderManager
+from trading_bot.strategies.base import Signal
 
 
 logger = logging.getLogger(__name__)

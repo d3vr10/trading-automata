@@ -4,9 +4,9 @@ from decimal import Decimal
 from collections import deque
 import statistics
 
-from src.strategies.base import BaseStrategy, Signal
-from src.data.models import Bar, Quote, Trade
-from src.monitoring.event_logger import EventLogger
+from trading_bot.strategies.base import BaseStrategy, Signal
+from trading_bot.data.models import Bar, Quote, Trade
+from trading_bot.monitoring.event_logger import EventLogger
 
 
 logger = logging.getLogger(__name__)

@@ -69,7 +69,7 @@ ALPACA_API_KEY=pk_test...
 ALPACA_SECRET_KEY=...
 
 # Run bot
-python -m src.main
+python -m trading_bot.main
 ```
 
 **What Happens:**
@@ -89,7 +89,7 @@ COINBASE_SECRET_KEY=...
 COINBASE_PASSPHRASE=...
 
 # Same code, different broker!
-python -m src.main
+python -m trading_bot.main
 ```
 
 **What Changed:**
@@ -191,7 +191,7 @@ ALPACA_API_KEY=pk_...
 ALPACA_SECRET_KEY=...
 
 # 3. Restart bot
-python -m src.main
+python -m trading_bot.main
 ```
 
 **That's it!** Same strategy, different broker.
@@ -203,7 +203,7 @@ python -m src.main
 ### Verify Alpaca Connection
 
 ```bash
-BROKER=alpaca TRADING_ENV=paper python -m src.main
+BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
 ```
 
 **Expected Output:**
@@ -216,7 +216,7 @@ Portfolio Value: $...
 ### Verify Coinbase Connection
 
 ```bash
-BROKER=coinbase COINBASE_API_KEY=... python -m src.main
+BROKER=coinbase COINBASE_API_KEY=... python -m trading_bot.main
 ```
 
 **Expected Output:**
@@ -329,7 +329,7 @@ pip install -r requirements.txt
 
 1. **For Testing:**
    ```bash
-   BROKER=alpaca TRADING_ENV=paper python -m src.main
+   BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
    ```
    Run for 2+ weeks, monitor performance
 

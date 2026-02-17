@@ -1,7 +1,7 @@
 """Database initialization using Alembic migrations.
 
 This script applies all pending migrations to initialize/update the database.
-Usage: python -m src.database.init
+Usage: python -m trading_bot.database.init
 
 Alembic handles versioning and tracks applied migrations.
 """
