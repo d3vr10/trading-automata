@@ -252,7 +252,8 @@ class TradeRepository:
                     'profit_factor': 0,
                 }
 
-            return dict(row)
+            # Convert psycopg3 Row to dict
+            return dict(zip(row.keys(), row))
         except Exception as e:
             logger.error(f"Failed to get performance metrics: {e}")
             return {}
