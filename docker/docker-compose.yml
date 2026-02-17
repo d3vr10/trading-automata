@@ -86,11 +86,19 @@ services:
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
 
+      # Health Check Configuration
+      HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-300}
+
+      # Strategy Warm-up Configuration
+      USE_CACHED_DATA: ${USE_CACHED_DATA:-true}
+
     volumes:
       # Mount logs directory for external access
       - ./logs:/app/logs
       # Mount config files for easy editing
       - ../config:/app/config
+      # Persist cached data across container restarts
+      - cache_data:/app/data/cache
       # Optional: Mount entire src for development
       # - ../src:/app/src
 
@@ -120,6 +128,9 @@ services:
 volumes:
   # Named volume for PostgreSQL data persistence
   postgres_data:
+    driver: local
+  # Named volume for strategy cache data persistence
+  cache_data:
     driver: local
 
 networks:

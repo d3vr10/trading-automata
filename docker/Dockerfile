@@ -29,9 +29,12 @@ RUN pip install -e .
 # Create logs directory
 RUN mkdir -p logs
 
+# Make entrypoint script executable
+RUN chmod +x docker/entrypoint.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import os; os.path.exists('logs/trading_bot.log') or exit(1)"
 
-# Initialize database with Alembic migrations, then run the bot
-CMD ["sh", "-c", "alembic upgrade head && python -m trading_bot.main"]
+# Use entrypoint script for initialization and startup
+ENTRYPOINT ["docker/entrypoint.sh"]
