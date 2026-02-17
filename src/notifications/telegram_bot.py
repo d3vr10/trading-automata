@@ -75,6 +75,12 @@ class TradingBotTelegram:
             self.application.add_handler(
                 CommandHandler("help", self._cmd_help)
             )
+            self.application.add_handler(
+                CommandHandler("version", self._cmd_version)
+            )
+            self.application.add_handler(
+                CommandHandler("uptime", self._cmd_uptime)
+            )
 
             # Set bot commands
             await self._set_commands()
@@ -92,6 +98,8 @@ class TradingBotTelegram:
             BotCommand("status", "Show bot status and portfolio"),
             BotCommand("trades", "Show recent trades"),
             BotCommand("metrics", "Show performance metrics"),
+            BotCommand("version", "Show bot version"),
+            BotCommand("uptime", "Show bot uptime"),
             BotCommand("pause", "Pause trading"),
             BotCommand("resume", "Resume trading"),
             BotCommand("help", "Show available commands"),
@@ -277,11 +285,46 @@ Trading has been resumed. The bot will resume executing trades.
 <b>/status</b> - Show bot status and portfolio
 <b>/trades</b> - Show recent trades (last 10)
 <b>/metrics</b> - Show performance metrics
+<b>/version</b> - Show bot version
+<b>/uptime</b> - Show bot uptime
 <b>/pause</b> - Pause trading
 <b>/resume</b> - Resume trading
 <b>/help</b> - Show this help message
 
 <i>Use /start to see all commands</i>
+"""
+        await update.message.reply_html(message)
+
+    async def _cmd_version(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /version command."""
+        try:
+            import tomllib  # Python 3.11+
+        except ModuleNotFoundError:
+            import tomli as tomllib  # Fallback for older Python
+
+        try:
+            with open('pyproject.toml', 'rb') as f:
+                project_data = tomllib.load(f)
+                version_str = project_data.get('project', {}).get('version', 'unknown')
+        except FileNotFoundError:
+            version_str = 'unknown'
+
+        message = f"""🤖 <b>Trading Bot Version</b>
+
+<b>Version:</b> <code>{version_str}</code>
+<b>Timestamp:</b> {datetime.utcnow().strftime('%H:%M:%S UTC')}
+"""
+        await update.message.reply_html(message)
+
+    async def _cmd_uptime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /uptime command."""
+        message = """⏱️ <b>Bot Uptime</b>
+
+<i>Uptime calculation requires database connection.</i>
+<i>Please use CLI command: python -m src.cli uptime</i>
+
+<b>Placeholder:</b>
+Uptime will be displayed when integrated with main bot
 """
         await update.message.reply_html(message)
 
