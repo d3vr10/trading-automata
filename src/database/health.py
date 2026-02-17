@@ -179,6 +179,7 @@ class HealthCheckManager:
                     datetime.utcnow()
                 )
             )
+            await self.conn.commit()
 
             logger.debug(
                 f"Health check saved - is_healthy: {self.is_healthy}, "
