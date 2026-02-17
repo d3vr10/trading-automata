@@ -64,6 +64,13 @@ class BaseStrategy(ABC):
         self.filters = config.get('filters', {})
         self._filter_skipped_count = 0
 
+        # Price history tracking for strategy warm-up and indicator calculations
+        # These can be populated by the strategy warmer with historical data
+        self.price_history = {}  # {symbol: [close_prices...]}
+        self.high_history = {}   # {symbol: [high_prices...]}
+        self.low_history = {}    # {symbol: [low_prices...]}
+        self.volume_history = {} # {symbol: [volumes...]}
+
     def should_trade(self, bar: Bar) -> bool:
         """Check if trading should occur based on filters.
 
