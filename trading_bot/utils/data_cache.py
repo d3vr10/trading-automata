@@ -19,7 +19,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from alpaca.data.requests import StockBarsRequest
-from alpaca.data.client import StockHistoricalDataClient
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.timeframe import TimeFrame
 from trading_bot.data.models import Bar
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,14 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
     """
     try:
         logger.info(f"Fetching {num_bars} bars for {symbol} from Alpaca...")
-        client = StockHistoricalDataClient()
+
+        # Get credentials from settings
+        from config.settings import load_settings
+        settings = load_settings()
+        client = StockHistoricalDataClient(
+            settings.alpaca_api_key,
+            settings.alpaca_secret_key
+        )
 
         # Calculate date range
         end_date = datetime.now()
@@ -131,7 +139,7 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
 
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
-            timeframe="Hour",
+            timeframe=TimeFrame.HOUR,
             start=start_date,
             end=end_date,
         )
@@ -167,6 +175,10 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
 
         return result
 
+    except (ConnectionError, TimeoutError) as e:
+        logger.error(f"Connection error fetching {symbol} from Alpaca: {e}")
+        logger.error("⚠️  Alpaca unreachable - check VPN connection, network, and API credentials")
+        return []
     except Exception as e:
         logger.error(f"Failed to fetch bars for {symbol}: {e}")
         return []

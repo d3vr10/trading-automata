@@ -7,11 +7,20 @@ Tracks decision points: bars received, filters applied, signals generated, order
 import json
 import logging
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, Optional
 import psycopg
 
 
 logger = logging.getLogger('trading_bot.events')
+
+
+class DecimalJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles Decimal objects."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 class EventLogger:
@@ -278,7 +287,7 @@ class EventLogger:
                         symbol,
                         broker,
                         message,
-                        json.dumps(details) if details else None,
+                        json.dumps(details, cls=DecimalJSONEncoder) if details else None,
                     ),
                 )
                 conn.commit()

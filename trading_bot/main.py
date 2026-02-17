@@ -519,10 +519,12 @@ class TradingBot:
                 # Send Telegram alert
                 if self.telegram_bot:
                     try:
+                        # Get current price from metadata if available
+                        current_price = signal.metadata.get('price') if signal.metadata else None
                         await self.telegram_bot.send_trade_alert(
                             symbol=signal.symbol,
                             side=signal.action,
-                            price=signal.price or Decimal("0"),
+                            price=Decimal(str(current_price)) if current_price else Decimal("0"),
                             quantity=signal.quantity,
                             strategy=strategy.name
                         )
@@ -549,11 +551,13 @@ class TradingBot:
             order_id: The order ID from the broker
         """
         try:
+            # Get current price from metadata if available
+            current_price = signal.metadata.get('price') if signal.metadata else None
             trade_id = await self.trade_repo.record_trade_entry(
                 symbol=signal.symbol,
                 strategy=strategy.name,
                 broker=self.settings.broker,
-                entry_price=signal.price or Decimal("0"),
+                entry_price=Decimal(str(current_price)) if current_price else Decimal("0"),
                 entry_quantity=signal.quantity,
                 entry_order_id=order_id,
                 notes=f"Signal from {strategy.name}: {signal.action}"

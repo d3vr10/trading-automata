@@ -56,6 +56,18 @@ docker-compose logs -f trading-bot
 docker-compose down
 ```
 
+## VPN Requirements
+
+**Important**: If Alpaca API access is geographically restricted in your region, ensure your **VPN is enabled BEFORE starting the container**.
+
+### Startup Behavior with VPN
+
+1. **VPN Enabled**: Cache initializes normally (30-45 seconds), bot starts trading
+2. **VPN Disabled**: Cache initialization times out after 45 seconds, bot starts with live data (slightly delayed indicator warm-up)
+3. **VPN Disabled → Enabled During Boot**: Bot will start and warm up indicators with live data once VPN connection is established
+
+The 45-second timeout prevents the container from hanging indefinitely if Alpaca is unreachable. No need to restart if you enable VPN after boot—the bot will seamlessly continue.
+
 ## Configuration
 
 ### Environment Variables

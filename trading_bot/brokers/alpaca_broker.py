@@ -99,10 +99,13 @@ class AlpacaBroker(IBroker):
             positions = self.client.get_all_positions()
             result = []
             for pos in positions:
+                # Handle different attribute names across alpaca-py versions
+                avg_fill_price = getattr(pos, 'avg_fill_price', None) or getattr(pos, 'avg_entry_price', 0)
+
                 result.append({
                     'symbol': pos.symbol,
                     'qty': float(pos.qty),
-                    'avg_fill_price': float(pos.avg_fill_price),
+                    'avg_fill_price': float(avg_fill_price) if avg_fill_price else 0,
                     'current_price': float(pos.current_price),
                     'unrealized_pl': float(pos.unrealized_pl),
                     'unrealized_plpc': float(pos.unrealized_plpc),
@@ -127,10 +130,13 @@ class AlpacaBroker(IBroker):
 
         try:
             pos = self.client.get_position(symbol)
+            # Handle different attribute names across alpaca-py versions
+            avg_fill_price = getattr(pos, 'avg_fill_price', None) or getattr(pos, 'avg_entry_price', 0)
+
             return {
                 'symbol': pos.symbol,
                 'qty': float(pos.qty),
-                'avg_fill_price': float(pos.avg_fill_price),
+                'avg_fill_price': float(avg_fill_price) if avg_fill_price else 0,
                 'current_price': float(pos.current_price),
                 'unrealized_pl': float(pos.unrealized_pl),
                 'unrealized_plpc': float(pos.unrealized_plpc),
@@ -173,7 +179,18 @@ class AlpacaBroker(IBroker):
 
         try:
             order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
-            tif = TimeInForce(time_in_force.upper())
+
+            # Map time_in_force to TimeInForce enum
+            # Valid values: day, gtc, opg, cls, ioc, fok
+            tif_map = {
+                'day': TimeInForce.DAY,
+                'gtc': TimeInForce.GTC,
+                'opg': TimeInForce.OPG,
+                'cls': TimeInForce.CLS,
+                'ioc': TimeInForce.IOC,
+                'fok': TimeInForce.FOK,
+            }
+            tif = tif_map.get(time_in_force.lower(), TimeInForce.DAY)
 
             if order_type.lower() == 'market':
                 order_request = MarketOrderRequest(

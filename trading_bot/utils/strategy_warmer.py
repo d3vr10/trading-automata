@@ -10,10 +10,6 @@ Usage:
 
 import logging
 from typing import Optional, List
-from datetime import datetime, timedelta
-from decimal import Decimal
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.client import StockHistoricalDataClient
 from trading_bot.data.models import Bar
 
 logger = logging.getLogger(__name__)
