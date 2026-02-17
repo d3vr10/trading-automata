@@ -3,9 +3,15 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+try:
+    import colorlog
+    COLORLOG_AVAILABLE = True
+except ImportError:
+    COLORLOG_AVAILABLE = False
+
 
 def setup_logging(level: str = 'INFO', log_file: Optional[str] = None) -> logging.Logger:
-    """Setup structured logging for the trading bot.
+    """Setup structured logging for the trading bot with colored console output.
 
     Args:
         level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -20,13 +26,32 @@ def setup_logging(level: str = 'INFO', log_file: Optional[str] = None) -> loggin
     # Remove any existing handlers
     logger.handlers.clear()
 
-    # Console handler with INFO level
+    # Console handler with colored output
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+
+    if COLORLOG_AVAILABLE:
+        # Use colorlog for colored output
+        console_format = colorlog.ColoredFormatter(
+            '%(log_color)s%(asctime)s - %(name)s - %(levelname)s%(reset)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            log_colors={
+                'DEBUG': 'cyan',
+                'INFO': 'green',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'red,bg_white',
+            },
+            secondary_log_colors={},
+            style='%'
+        )
+    else:
+        # Fallback to standard formatting if colorlog not available
+        console_format = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+
     console_handler.setFormatter(console_format)
     logger.addHandler(console_handler)
 
