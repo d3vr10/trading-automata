@@ -6,7 +6,7 @@ Tracks decision points: bars received, filters applied, signals generated, order
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Any, Dict, Optional
 import psycopg
@@ -122,7 +122,7 @@ class EventLogger:
             message=f"Signal generated: {action.upper()} {quantity} @ confidence {confidence:.2f}",
             details=details,
         )
-        logger.info(f"[{symbol}] 🎯 SIGNAL: {action.upper()} qty={quantity}, confidence={confidence:.2f}")
+        logger.info(f"[{symbol}] [{strategy}] 🎯 SIGNAL: {action.upper()} qty={quantity}, confidence={confidence:.2f}")
 
     def log_order_submitted(
         self,
@@ -153,7 +153,7 @@ class EventLogger:
             message=f"Order submitted: {order_id}",
             details=details,
         )
-        logger.info(f"[{symbol}] ✓ Order submitted: {order_id}, {side.upper()} {quantity}")
+        logger.info(f"[{symbol}] [{strategy}] ✓ Order submitted: {order_id}, {side.upper()} {quantity}")
 
     def log_order_filled(
         self,
@@ -184,7 +184,7 @@ class EventLogger:
             message=f"Order filled: {order_id}",
             details=details,
         )
-        logger.info(f"[{symbol}] ✓ Order FILLED: {order_id}, {side.upper()} {quantity} @ {filled_price:.2f}")
+        logger.info(f"[{symbol}] [{strategy}] ✓ Order FILLED: {order_id}, {side.upper()} {quantity} @ {filled_price:.2f}")
 
     def log_order_failed(
         self,
@@ -208,7 +208,7 @@ class EventLogger:
             message=f"Order failed: {order_id} - {reason}",
             details=details,
         )
-        logger.error(f"[{symbol}] ✗ Order FAILED: {order_id} - {reason}")
+        logger.error(f"[{symbol}] [{strategy}] ✗ Order FAILED: {order_id} - {reason}")
 
     def log_error(
         self,
@@ -234,7 +234,7 @@ class EventLogger:
             message=message,
             details=details,
         )
-        logger.error(f"[{symbol}] ERROR: {message}")
+        logger.error(f"[{symbol}] [{strategy}] ERROR: {message}")
 
     def log_warning(
         self,
@@ -254,7 +254,7 @@ class EventLogger:
             message=message,
             details=details or {},
         )
-        logger.warning(f"[{symbol}] WARNING: {message}")
+        logger.warning(f"[{symbol}] [{strategy}] WARNING: {message}")
 
     def _log(
         self,
@@ -281,7 +281,7 @@ class EventLogger:
                     """,
                     (
                         event_type,
-                        datetime.utcnow(),
+                        datetime.now(UTC),
                         severity,
                         strategy,
                         symbol,

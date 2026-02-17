@@ -3,7 +3,7 @@ import logging
 import sys
 from typing import List, Optional
 from decimal import Decimal
-from datetime import datetime, time
+from datetime import datetime, time, UTC
 
 import psycopg
 
@@ -46,14 +46,14 @@ class TradingBot:
         self._running = False
 
         # Session tracking - records when this bot process started
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(UTC)
 
         # Database components
         self.db_conn: Optional[psycopg.AsyncConnection] = None
         self.trade_repo: Optional[TradeRepository] = None
         self.health_checks: Optional[HealthCheckRegistry] = None
         self._health_check_task: Optional[asyncio.Task] = None
-        self._last_health_check_save = datetime.utcnow()
+        self._last_health_check_save = datetime.now(UTC)
 
         # Event logging
         self.event_logger = None
@@ -355,7 +355,7 @@ class TradingBot:
         delay = self._broker_reconnect_base_delay * delay_multiplier
 
         # Check if we should retry (don't retry more frequently than the calculated delay)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         if self._last_broker_reconnect_attempt:
             seconds_since_attempt = (now - self._last_broker_reconnect_attempt).total_seconds()
             if seconds_since_attempt < delay:
@@ -434,10 +434,10 @@ class TradingBot:
 
                 # Periodically save health checks (configurable interval, default 5 minutes)
                 if self.health_checks and (
-                    datetime.utcnow() - self._last_health_check_save
+                    datetime.now(UTC) - self._last_health_check_save
                 ).total_seconds() >= self.settings.health_check_interval:
                     await self.health_checks.save_all()
-                    self._last_health_check_save = datetime.utcnow()
+                    self._last_health_check_save = datetime.now(UTC)
 
                 # Sleep to avoid overwhelming the API
                 await asyncio.sleep(60)  # Check every minute
@@ -502,12 +502,12 @@ class TradingBot:
 
         # Execute signals
         for strategy, signal in signals:
-            logger.info(f"Strategy {strategy.name} generated signal: {signal}")
+            logger.info(f"[{signal.symbol}] [{strategy.name}] Generated signal: {signal}")
 
             # Try to execute the signal
             order_id = self.portfolio_manager.execute_signal_if_valid(signal)
             if order_id:
-                logger.info(f"Signal executed as order {order_id}")
+                logger.info(f"[{signal.symbol}] [{strategy.name}] Signal executed as order {order_id}")
 
                 # Record order to database
                 if self.trade_repo:
@@ -538,7 +538,7 @@ class TradingBot:
                         await check.record_order_submitted()
 
             else:
-                logger.info(f"Signal not executed (validation failed or no action)")
+                logger.info(f"[{signal.symbol}] [{strategy.name}] Signal not executed (validation failed or no action)")
 
     async def _record_trade_entry(
         self, strategy: BaseStrategy, signal, order_id: str
@@ -620,7 +620,7 @@ class TradingBot:
             try:
                 await self.telegram_bot.send_message(
                     "🛑 <b>Trading Bot Stopped</b>\n"
-                    f"Shutdown time: {datetime.utcnow().strftime('%H:%M:%S UTC')}"
+                    f"Shutdown time: {datetime.now(UTC).strftime('%H:%M:%S UTC')}"
                 )
                 await self.telegram_bot.stop()
                 logger.info("Telegram bot stopped")
