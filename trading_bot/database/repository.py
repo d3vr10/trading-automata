@@ -59,20 +59,25 @@ class TradeRepository:
         """
 
         try:
-            result = await self.conn.execute(
-                query,
-                symbol,
-                strategy,
-                broker,
-                datetime.utcnow(),
-                float(entry_price),
-                float(entry_quantity),
-                entry_order_id,
-                notes,
-            )
-            trade_id = result[0]
-            logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade_id})")
-            return trade_id
+            # Use executemany or parameterized query with tuple of params
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    query,
+                    (
+                        symbol,
+                        strategy,
+                        broker,
+                        datetime.utcnow(),
+                        float(entry_price),
+                        float(entry_quantity),
+                        entry_order_id,
+                        notes,
+                    )
+                )
+                result = await cur.fetchone()
+                trade_id = result[0]
+                logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade_id})")
+                return trade_id
         except Exception as e:
             logger.error(f"Failed to record trade entry: {e}")
             raise
@@ -107,17 +112,20 @@ class TradeRepository:
         """
 
         try:
-            await self.conn.execute(
-                query,
-                datetime.utcnow(),
-                float(exit_price),
-                float(exit_quantity),
-                exit_order_id,
-                float(exit_price),
-                float(exit_price),  # Will be replaced with actual entry price
-                trade_id,
-            )
-            logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    query,
+                    (
+                        datetime.utcnow(),
+                        float(exit_price),
+                        float(exit_quantity),
+                        exit_order_id,
+                        float(exit_price),
+                        float(exit_price),  # Will be replaced with actual entry price
+                        trade_id,
+                    )
+                )
+                logger.info(f"Trade exit recorded: ID {trade_id} @ {exit_price}")
         except Exception as e:
             logger.error(f"Failed to record trade exit: {e}")
             raise
@@ -153,8 +161,10 @@ class TradeRepository:
         """
 
         try:
-            rows = await self.conn.execute(query, symbol, days, limit)
-            return [dict(row) for row in rows]
+            async with self.conn.cursor() as cur:
+                await cur.execute(query, (symbol, days, limit))
+                rows = await cur.fetchall()
+                return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get trades for {symbol}: {e}")
             return []
@@ -189,8 +199,10 @@ class TradeRepository:
         """
 
         try:
-            rows = await self.conn.execute(query, strategy, days, limit)
-            return [dict(row) for row in rows]
+            async with self.conn.cursor() as cur:
+                await cur.execute(query, (strategy, days, limit))
+                rows = await cur.fetchall()
+                return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get trades for strategy {strategy}: {e}")
             return []
@@ -237,8 +249,9 @@ class TradeRepository:
         """
 
         try:
-            result = await self.conn.execute(query, tuple(params))
-            row = await result.fetchone()
+            async with self.conn.cursor() as cur:
+                await cur.execute(query, tuple(params))
+                row = await cur.fetchone()
 
             if not row:
                 return {
@@ -286,8 +299,10 @@ class TradeRepository:
         """
 
         try:
-            rows = await self.conn.execute(query, *params)
-            return [dict(row) for row in rows]
+            async with self.conn.cursor() as cur:
+                await cur.execute(query, tuple(params) if params else ())
+                rows = await cur.fetchall()
+                return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get open positions: {e}")
             return []
@@ -326,19 +341,23 @@ class TradeRepository:
         """
 
         try:
-            result = await self.conn.execute(
-                query,
-                symbol,
-                strategy,
-                broker,
-                float(quantity),
-                float(entry_price),
-                float(stop_loss) if stop_loss else None,
-                float(take_profit) if take_profit else None,
-            )
-            position_id = result[0]
-            logger.info(f"Position recorded: {symbol} {quantity} (ID: {position_id})")
-            return position_id
+            async with self.conn.cursor() as cur:
+                await cur.execute(
+                    query,
+                    (
+                        symbol,
+                        strategy,
+                        broker,
+                        float(quantity),
+                        float(entry_price),
+                        float(stop_loss) if stop_loss else None,
+                        float(take_profit) if take_profit else None,
+                    )
+                )
+                result = await cur.fetchone()
+                position_id = result[0]
+                logger.info(f"Position recorded: {symbol} {quantity} (ID: {position_id})")
+                return position_id
         except Exception as e:
             logger.error(f"Failed to record position: {e}")
             raise
@@ -360,8 +379,9 @@ class TradeRepository:
         """
 
         try:
-            await self.conn.execute(query, float(realized_pnl), position_id)
-            logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
+            async with self.conn.cursor() as cur:
+                await cur.execute(query, (float(realized_pnl), position_id))
+                logger.info(f"Position closed: ID {position_id}, P&L: {realized_pnl}")
         except Exception as e:
             logger.error(f"Failed to close position: {e}")
             raise

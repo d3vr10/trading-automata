@@ -139,7 +139,7 @@ def fetch_and_cache_bars(symbol: str, num_bars: int = 100) -> List[Bar]:
 
         request = StockBarsRequest(
             symbol_or_symbols=symbol,
-            timeframe=TimeFrame.HOUR,
+            timeframe=TimeFrame.One_Hour,
             start=start_date,
             end=end_date,
         )
