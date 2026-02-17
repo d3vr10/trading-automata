@@ -19,6 +19,7 @@ from trading_bot.execution.order_manager import OrderManager
 from trading_bot.monitoring.logger import setup_logging, get_logger
 from trading_bot.monitoring.event_logger import init_event_logger, get_event_logger
 from trading_bot.utils.exceptions import TradingBotError
+from trading_bot.utils.strategy_warmer import warm_up_all_strategies
 from trading_bot.database.repository import TradeRepository
 from trading_bot.database.health import HealthCheckRegistry
 from trading_bot.notifications.telegram_bot import TradingBotTelegram
@@ -214,6 +215,13 @@ class TradingBot:
                 for strategy in self.strategies:
                     self.health_checks.register(self.settings.broker, strategy.name)
                 logger.info(f"Registered {len(self.strategies)} health checks")
+
+            # Warm up strategies with historical data (load indicators immediately)
+            logger.info("Warming up strategies with historical data...")
+            try:
+                warm_up_all_strategies(self.strategies, num_bars=100)
+            except Exception as e:
+                logger.warning(f"Strategy warm-up failed: {e}. Bot will wait for live data instead.")
 
             return True
 
