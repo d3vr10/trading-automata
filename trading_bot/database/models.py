@@ -266,7 +266,7 @@ class DatabaseConnection:
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_pre_ping=True,  # Test connections before using
-            connect_args={"timeout": 30},  # Connection timeout
+            connect_args={"connect_timeout": 30},  # Connection timeout (psycopg3)
         )
         self.session_factory = async_sessionmaker(
             self.engine,
