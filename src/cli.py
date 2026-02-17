@@ -278,10 +278,10 @@ def positions(watch):
         try:
             result = await conn.execute(
                 """
-                SELECT symbol, strategy, entry_price, quantity, entry_timestamp
+                SELECT symbol, strategy, entry_price, quantity, opened_at
                 FROM positions
                 WHERE is_open = true
-                ORDER BY entry_timestamp DESC
+                ORDER BY opened_at DESC
                 """
             )
             positions_list = await result.fetchall()
