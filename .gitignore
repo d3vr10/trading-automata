@@ -42,6 +42,9 @@ htmlcov/
 logs/
 *.log
 
+# Data caching
+data/cache/
+
 # OS
 .DS_Store
 Thumbs.db

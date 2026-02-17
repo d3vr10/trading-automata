@@ -219,7 +219,11 @@ class TradingBot:
             # Warm up strategies with historical data (load indicators immediately)
             logger.info("Warming up strategies with historical data...")
             try:
-                warm_up_all_strategies(self.strategies, num_bars=100)
+                warm_up_all_strategies(
+                    self.strategies,
+                    num_bars=100,
+                    use_cache=self.settings.use_cached_data
+                )
             except Exception as e:
                 logger.warning(f"Strategy warm-up failed: {e}. Bot will wait for live data instead.")
 

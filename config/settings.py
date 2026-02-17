@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Health check configuration
     health_check_interval: int = Field(300, env='HEALTH_CHECK_INTERVAL')
 
+    # Strategy warm-up configuration
+    use_cached_data: bool = Field(True, env='USE_CACHED_DATA')
+
     class Config:
         env_file = '.env'
         env_file_encoding = 'utf-8'

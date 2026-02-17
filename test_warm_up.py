@@ -2,11 +2,13 @@
 """Quick test script to warm up strategies and verify they're ready to trade.
 
 Usage:
-    python test_warm_up.py
+    python test_warm_up.py           # Test with cached data
+    python test_warm_up.py --live    # Test with fresh API data
+    python test_warm_up.py --refresh # Download & cache fresh data first
 
 This script:
 1. Loads all strategies from config/strategies.yaml
-2. Warms them up with 50 hours of historical data
+2. Warms them up with 50 hours of historical data (cached or live)
 3. Shows how many bars each strategy has loaded
 4. Exits (ready to start the bot now)
 """
@@ -16,7 +18,22 @@ from trading_bot.strategies.registry import StrategyRegistry
 from trading_bot.utils.strategy_warmer import warm_up_all_strategies
 
 if __name__ == "__main__":
-    print("Testing strategy warm-up...")
+    use_cache = True
+
+    # Parse command line arguments
+    if "--live" in sys.argv:
+        use_cache = False
+        print("🔴 LIVE MODE: Fetching fresh data from Alpaca API...")
+    elif "--refresh" in sys.argv:
+        print("⬇️  REFRESHING CACHE: Downloading latest data from Alpaca...")
+        from trading_bot.utils.data_cache import fetch_and_cache_bars
+        for symbol in ["SPY", "QQQ"]:
+            fetch_and_cache_bars(symbol, num_bars=100)
+        print("✅ Cache refreshed!")
+        print()
+    else:
+        print("🟢 CACHED MODE: Using local cached data (deterministic testing)...")
+
     print()
 
     # Load strategies
@@ -35,10 +52,13 @@ if __name__ == "__main__":
 
     # Warm up
     print("Warming up strategies with historical data...")
-    print("(This fetches the last 50 hours of 1-hour bars from Alpaca)")
+    if use_cache:
+        print("(Loading from local cache - instant)")
+    else:
+        print("(Fetching fresh data from Alpaca API)")
     print()
 
-    successful = warm_up_all_strategies(strategies, num_bars=50)
+    successful = warm_up_all_strategies(strategies, num_bars=50, use_cache=use_cache)
 
     print()
     print("Warm-up Results:")
