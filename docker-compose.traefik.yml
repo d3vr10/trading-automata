@@ -1,0 +1,82 @@
+# Traefik Reverse Proxy with Let's Encrypt
+# Deploy this once on your remote machine to manage ALL containerized workloads
+# All other docker-compose files will route through this Traefik instance
+
+name: traefik-stack
+
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+
+    command:
+      # Global settings
+      - "--global.checkNewVersion=false"
+      - "--global.sendAnonymousUsage=false"
+
+      # API & Dashboard
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+
+      # Entrypoints (ports)
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Redirect HTTP → HTTPS automatically
+      - "--entrypoints.web.http.redirections.entrypoint.main=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+      # ACME (Let's Encrypt) Configuration
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=d3vr10@gmail.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
+      # Docker Provider (auto-discover containers with labels)
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik-network"
+
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      # Docker socket for container discovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Let's Encrypt certificates persistence
+      - letsencrypt:/letsencrypt
+
+    networks:
+      - traefik-network
+
+    # Traefik dashboard labels (optional - for monitoring)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.hermes-bot.dynv6.net`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      # Basic auth for dashboard (optional)
+      # Generate with: echo $(htpasswd -nB admin) | sed -e s/\\$/\\$\\$/g
+      # - "traefik.http.middlewares.dashboard-auth.basicauth.users=admin:$$2y$$11$$..."
+      # - "traefik.http.routers.dashboard.middlewares=dashboard-auth@docker"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+volumes:
+  letsencrypt:
+    driver: local
+
+networks:
+  traefik-network:
+    driver: bridge
+    name: traefik-network
