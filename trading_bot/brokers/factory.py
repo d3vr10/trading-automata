@@ -1,10 +1,12 @@
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 import logging
 
 from .base import IBroker, Environment
 from .alpaca_broker import AlpacaBroker
 from .coinbase_broker import CoinbaseBroker
 
+if TYPE_CHECKING:
+    from config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,49 @@ class BrokerFactory:
     - alpaca: Stocks, forex, options, crypto (paper & live)
     - coinbase: Crypto only (live trading)
     """
+
+    @staticmethod
+    def build_config_from_settings(settings: "Settings") -> Dict[str, str]:
+        """Build broker configuration dictionary from Settings object.
+
+        Args:
+            settings: Settings object with broker credentials
+
+        Returns:
+            Dictionary with broker-specific credentials and config.
+
+        Raises:
+            ValueError: If required credentials are missing for selected broker.
+        """
+        broker_type = settings.broker.lower()
+
+        if broker_type == 'alpaca':
+            if not settings.alpaca_api_key or not settings.alpaca_secret_key:
+                raise ValueError(
+                    "Alpaca broker requires ALPACA_API_KEY and ALPACA_SECRET_KEY"
+                )
+            return {
+                'api_key': settings.alpaca_api_key,
+                'secret_key': settings.alpaca_secret_key,
+            }
+
+        elif broker_type == 'coinbase':
+            if (not settings.coinbase_api_key or
+                not settings.coinbase_secret_key or
+                not settings.coinbase_passphrase):
+                raise ValueError(
+                    "Coinbase broker requires COINBASE_API_KEY, COINBASE_SECRET_KEY, and COINBASE_PASSPHRASE"
+                )
+            return {
+                'api_key': settings.coinbase_api_key,
+                'secret_key': settings.coinbase_secret_key,
+                'passphrase': settings.coinbase_passphrase,
+            }
+
+        else:
+            raise ValueError(
+                f"Unsupported broker: {broker_type}. Supported: alpaca, coinbase"
+            )
 
     @staticmethod
     def create_broker(

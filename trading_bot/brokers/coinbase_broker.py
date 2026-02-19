@@ -320,6 +320,85 @@ class CoinbaseBroker(IBroker):
             logger.warning(f"Failed to cancel order {order_id}: {e}")
             return False
 
+    def close_position(self, symbol: str) -> bool:
+        """Close/liquidate the full position for a symbol.
+
+        Coinbase has no native close_position endpoint, so we emulate it
+        by submitting a market sell order for the full position quantity.
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTC-USD')
+
+        Returns:
+            True if closed successfully, False otherwise.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            # Get current position
+            position = self.get_position(symbol)
+            if not position:
+                logger.warning(f"No open position for {symbol}")
+                return False
+
+            qty = position.get('quantity', 0)
+            if qty == 0:
+                logger.warning(f"Position quantity is 0 for {symbol}")
+                return False
+
+            # Submit market sell order for the full quantity
+            order_id = self.submit_order(
+                symbol=symbol,
+                qty=Decimal(str(qty)),
+                side='sell',
+                order_type='market',
+                time_in_force='IOC'  # Immediate Or Cancel
+            )
+
+            logger.info(f"Position closed: {symbol} (order: {order_id})")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to close position {symbol}: {e}")
+            return False
+
+    def cancel_all_orders(self, symbol: Optional[str] = None) -> List[str]:
+        """Cancel all open orders, optionally for a specific symbol.
+
+        Args:
+            symbol: Optional symbol to filter cancellations
+
+        Returns:
+            List of cancelled order IDs.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            # Get all open orders
+            orders = self.get_orders(status='open')
+
+            # Filter by symbol if provided
+            if symbol:
+                orders = [o for o in orders if o['symbol'] == symbol]
+
+            # Extract order IDs
+            order_ids = [o['id'] for o in orders]
+
+            if not order_ids:
+                logger.info(f"No open orders to cancel{' for ' + symbol if symbol else ''}")
+                return []
+
+            # Batch cancel (Coinbase supports up to 100 IDs per request)
+            self.client.cancel_orders(order_ids=order_ids)
+            logger.info(f"Cancelled {len(order_ids)} orders{' for ' + symbol if symbol else ''}")
+            return order_ids
+
+        except Exception as e:
+            logger.error(f"Failed to cancel orders: {e}")
+            return []
+
     def get_order(self, order_id: str) -> Dict[str, Any]:
         """Get order details.
 

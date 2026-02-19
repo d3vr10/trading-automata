@@ -253,6 +253,59 @@ class AlpacaBroker(IBroker):
             logger.warning(f"Failed to cancel order {order_id}: {e}")
             return False
 
+    def close_position(self, symbol: str) -> bool:
+        """Close/liquidate the full position for a symbol.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            True if closed successfully, False otherwise.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            self.client.close_position(symbol_or_asset_id=symbol)
+            logger.info(f"Position closed: {symbol}")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to close position {symbol}: {e}")
+            return False
+
+    def cancel_all_orders(self, symbol: Optional[str] = None) -> List[str]:
+        """Cancel all open orders, optionally for a specific symbol.
+
+        Args:
+            symbol: Optional symbol to filter cancellations
+
+        Returns:
+            List of cancelled order IDs.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            if symbol:
+                # Get all open orders and filter by symbol
+                orders = self.get_orders(status='open')
+                symbol_orders = [o for o in orders if o['symbol'] == symbol]
+                cancelled = []
+                for order in symbol_orders:
+                    if self.cancel_order(order['id']):
+                        cancelled.append(order['id'])
+                logger.info(f"Cancelled {len(cancelled)} orders for {symbol}")
+                return cancelled
+            else:
+                # Cancel all orders using Alpaca's batch cancel
+                cancellation_results = self.client.cancel_orders()
+                cancelled = [str(result.id) for result in cancellation_results if result]
+                logger.info(f"Cancelled {len(cancelled)} orders")
+                return cancelled
+        except Exception as e:
+            logger.error(f"Failed to cancel orders: {e}")
+            return []
+
     def get_order(self, order_id: str) -> Dict[str, Any]:
         """Get order details.
 

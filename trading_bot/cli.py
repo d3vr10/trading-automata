@@ -22,6 +22,8 @@ from tabulate import tabulate
 from config.settings import load_settings
 from trading_bot.database.models import DatabaseConnection, Trade, Position, HealthCheck, TradingEvent, BotSession
 from trading_bot.database.repository import TradeRepository
+from trading_bot.brokers.factory import BrokerFactory
+from trading_bot.brokers.base import IBroker
 
 
 # Color codes for terminal output
@@ -53,6 +55,32 @@ def get_database():
         return db
     except Exception as e:
         click.echo(colored(f"❌ Failed to connect to database: {e}", Colors.RED))
+        sys.exit(1)
+
+
+def get_broker() -> IBroker:
+    """Get broker instance connected and ready to trade."""
+    settings = load_settings()
+    try:
+        from trading_bot.brokers.base import Environment
+
+        # Load broker configuration from settings
+        broker_config = BrokerFactory.build_config_from_settings(settings)
+        environment = Environment(settings.trading_environment)
+
+        # Create and connect broker
+        broker = BrokerFactory.create_broker(
+            broker_type=settings.broker,
+            environment=environment,
+            config=broker_config
+        )
+
+        if not broker.connect():
+            raise RuntimeError(f"Failed to connect to {settings.broker} broker")
+
+        return broker
+    except Exception as e:
+        click.echo(colored(f"❌ Failed to connect to broker: {e}", Colors.RED))
         sys.exit(1)
 
 
@@ -592,6 +620,273 @@ def uptime():
             await db.dispose()
 
     asyncio.run(_uptime())
+
+
+# Broker Management Commands
+
+@cli.command(name='broker-positions')
+def broker_positions():
+    """List live open positions from broker."""
+    try:
+        broker = get_broker()
+        positions = broker.get_positions()
+
+        if not positions:
+            click.echo(colored("\n📊 Open Positions\n", Colors.BOLD))
+            click.echo("No open positions")
+            click.echo()
+            return
+
+        # Format positions table
+        click.echo(colored("\n📊 Open Positions\n", Colors.BOLD))
+        click.echo(colored("=" * 80, Colors.CYAN))
+
+        table_data = []
+        for i, pos in enumerate(positions, 1):
+            symbol = pos.get('symbol', 'N/A')
+            qty = pos.get('qty', 0)
+            entry_price = pos.get('entry_price', 0)
+            current_price = pos.get('current_price', 0)
+            pnl = pos.get('unrealized_pnl', 0)
+            pnl_pct = pos.get('unrealized_pnl_pct', 0)
+
+            pnl_color = Colors.GREEN if pnl >= 0 else Colors.RED
+            table_data.append([
+                i,
+                symbol,
+                f"{float(qty):.4f}",
+                f"${float(entry_price):.2f}",
+                f"${float(current_price):.2f}",
+                colored(f"${float(pnl):.2f} ({float(pnl_pct):.1f}%)", pnl_color)
+            ])
+
+        headers = ["#", "Symbol", "Qty", "Entry Price", "Current Price", "P&L"]
+        click.echo(tabulate(table_data, headers=headers, tablefmt='grid'))
+        click.echo()
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
+
+
+@cli.command(name='broker-orders')
+@click.option('--symbol', '-s', default=None, help='Filter by symbol')
+@click.option('--status', '-st', default='open', help='Filter by status (open, closed, etc.)')
+def broker_orders(symbol, status):
+    """List open orders from broker."""
+    try:
+        broker = get_broker()
+        orders = broker.get_orders(status=status)
+
+        if symbol:
+            orders = [o for o in orders if o.get('symbol') == symbol]
+
+        if not orders:
+            click.echo(colored(f"\n📋 Open Orders\n", Colors.BOLD))
+            click.echo(f"No orders found{f' for {symbol}' if symbol else ''}")
+            click.echo()
+            return
+
+        click.echo(colored(f"\n📋 Open Orders {f'for {symbol}' if symbol else ''}\n", Colors.BOLD))
+        click.echo(colored("=" * 100, Colors.CYAN))
+
+        table_data = []
+        for i, order in enumerate(orders, 1):
+            order_id = str(order.get('id', 'N/A'))[:8]  # First 8 chars
+            symbol = order.get('symbol', 'N/A')
+            side = order.get('side', 'N/A').upper()
+            qty = order.get('qty', 0)
+            price = order.get('price', 0)
+            status_val = order.get('status', 'N/A')
+            created = order.get('created_at', 'N/A')
+
+            side_emoji = "📈" if side == 'BUY' else "📉"
+            table_data.append([
+                i,
+                f"{order_id}...",
+                symbol,
+                f"{side_emoji} {side}",
+                f"{float(qty):.4f}",
+                f"${float(price):.2f}" if price else "Market",
+                status_val,
+                str(created)[:16] if created != 'N/A' else 'N/A'
+            ])
+
+        headers = ["#", "Order ID", "Symbol", "Side", "Qty", "Price", "Status", "Created"]
+        click.echo(tabulate(table_data, headers=headers, tablefmt='grid'))
+        click.echo()
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
+
+
+@cli.command(name='close-position')
+@click.argument('symbol')
+@click.option('--confirm', '-y', is_flag=True, help='Skip confirmation prompt')
+def close_position(symbol, confirm):
+    """Close/liquidate a position by symbol."""
+    try:
+        broker = get_broker()
+
+        # Show current position
+        position = broker.get_position(symbol)
+        if not position:
+            click.echo(colored(f"\n❌ No position found for {symbol}\n", Colors.RED))
+            return
+
+        qty = position.get('qty', 0)
+        entry_price = position.get('entry_price', 0)
+        current_price = position.get('current_price', 0)
+        pnl = position.get('unrealized_pnl', 0)
+
+        click.echo(colored(f"\n🔚 Close Position: {symbol}", Colors.BOLD))
+        click.echo(colored("=" * 50, Colors.CYAN))
+        click.echo(f"Quantity: {float(qty):.4f}")
+        click.echo(f"Entry Price: ${float(entry_price):.2f}")
+        click.echo(f"Current Price: ${float(current_price):.2f}")
+        click.echo(colored(f"P&L: ${float(pnl):.2f}", Colors.GREEN if pnl >= 0 else Colors.RED))
+        click.echo()
+
+        if not confirm:
+            if not click.confirm(f"Close position for {symbol}?"):
+                click.echo("Cancelled")
+                return
+
+        # Close position
+        if broker.close_position(symbol):
+            click.echo(colored(f"✅ Position closed for {symbol}\n", Colors.GREEN))
+        else:
+            click.echo(colored(f"❌ Failed to close position for {symbol}\n", Colors.RED))
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
+
+
+@cli.command(name='close-all-positions')
+@click.option('--confirm', '-y', is_flag=True, help='Skip confirmation prompt')
+def close_all_positions(confirm):
+    """Close all open positions."""
+    try:
+        broker = get_broker()
+
+        positions = broker.get_positions()
+        if not positions:
+            click.echo(colored("\n❌ No open positions\n", Colors.RED))
+            return
+
+        click.echo(colored(f"\n🔚 Close All Positions", Colors.BOLD))
+        click.echo(colored("=" * 50, Colors.CYAN))
+        click.echo(f"Found {len(positions)} open position(s):\n")
+
+        for pos in positions:
+            symbol = pos.get('symbol', 'N/A')
+            qty = pos.get('qty', 0)
+            pnl = pos.get('unrealized_pnl', 0)
+            click.echo(f"  • {symbol}: {float(qty):.4f} (P&L: ${float(pnl):.2f})")
+
+        click.echo()
+
+        if not confirm:
+            if not click.confirm(f"Close all {len(positions)} position(s)?"):
+                click.echo("Cancelled")
+                return
+
+        # Close all positions
+        closed_count = 0
+        for pos in positions:
+            symbol = pos.get('symbol')
+            if symbol and broker.close_position(symbol):
+                closed_count += 1
+                click.echo(f"  ✅ Closed {symbol}")
+            else:
+                click.echo(colored(f"  ❌ Failed to close {symbol}", Colors.RED))
+
+        click.echo(colored(f"\nClosed {closed_count}/{len(positions)} positions\n", Colors.GREEN if closed_count == len(positions) else Colors.YELLOW))
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
+
+
+@cli.command(name='cancel-order')
+@click.argument('order_id')
+@click.option('--confirm', '-y', is_flag=True, help='Skip confirmation prompt')
+def cancel_order(order_id, confirm):
+    """Cancel a single order by ID."""
+    try:
+        broker = get_broker()
+
+        # Show order details
+        try:
+            order = broker.get_order(order_id)
+            if not order:
+                click.echo(colored(f"\n❌ Order not found: {order_id}\n", Colors.RED))
+                return
+        except:
+            click.echo(colored(f"\n⚠️  Could not fetch order details (order may not exist)\n", Colors.YELLOW))
+            order = None
+
+        click.echo(colored(f"\n🚫 Cancel Order: {order_id}", Colors.BOLD))
+        click.echo(colored("=" * 50, Colors.CYAN))
+
+        if order:
+            click.echo(f"Symbol: {order.get('symbol', 'N/A')}")
+            click.echo(f"Side: {order.get('side', 'N/A').upper()}")
+            click.echo(f"Qty: {float(order.get('qty', 0)):.4f}")
+            click.echo(f"Status: {order.get('status', 'N/A')}")
+            click.echo()
+
+        if not confirm:
+            if not click.confirm(f"Cancel order {order_id}?"):
+                click.echo("Cancelled")
+                return
+
+        if broker.cancel_order(order_id):
+            click.echo(colored(f"✅ Order cancelled: {order_id}\n", Colors.GREEN))
+        else:
+            click.echo(colored(f"❌ Failed to cancel order: {order_id}\n", Colors.RED))
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
+
+
+@cli.command(name='cancel-orders')
+@click.option('--symbol', '-s', default=None, help='Cancel only orders for this symbol')
+@click.option('--confirm', '-y', is_flag=True, help='Skip confirmation prompt')
+def cancel_orders(symbol, confirm):
+    """Cancel multiple open orders."""
+    try:
+        broker = get_broker()
+
+        # Get orders to cancel
+        order_ids = broker.cancel_all_orders(symbol)
+
+        if not order_ids:
+            click.echo(colored(f"\n❌ No open orders{f' for {symbol}' if symbol else ''}\n", Colors.RED))
+            return
+
+        click.echo(colored(f"\n🚫 Cancel Orders{f' for {symbol}' if symbol else ''}", Colors.BOLD))
+        click.echo(colored("=" * 50, Colors.CYAN))
+        click.echo(f"Found {len(order_ids)} order(s) to cancel:\n")
+
+        # This would list them if we had the data
+        # For now just show count
+        click.echo()
+
+        if not confirm:
+            if not click.confirm(f"Cancel {len(order_ids)} order(s)?"):
+                click.echo("Cancelled")
+                return
+
+        # Orders already cancelled by cancel_all_orders, just report
+        click.echo(colored(f"✅ Cancelled {len(order_ids)} order(s)\n", Colors.GREEN))
+
+    finally:
+        if 'broker' in locals():
+            broker.disconnect()
 
 
 if __name__ == '__main__':

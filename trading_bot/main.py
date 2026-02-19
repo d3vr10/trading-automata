@@ -43,6 +43,7 @@ class TradingBot:
         self.portfolio_manager = None
         self.strategies = []
         self._running = False
+        self._paused = False  # Trading pause/resume state
 
         # Session tracking - records when this bot process started
         self.start_time = datetime.now(UTC)
@@ -96,7 +97,7 @@ class TradingBot:
             environment = Environment(self.settings.trading_environment)
 
             # Build broker config based on broker type
-            broker_config = self._build_broker_config()
+            broker_config = BrokerFactory.build_config_from_settings(self.settings)
 
             self.broker = BrokerFactory.create_broker(
                 broker_type=self.settings.broker,
@@ -176,10 +177,24 @@ class TradingBot:
 
             # Initialize Telegram bot
             logger.info("Initializing Telegram bot...")
+            # Parse whitelist from comma-separated string
+            whitelist = []
+            if self.settings.telegram_username_whitelist:
+                whitelist = [u.strip() for u in self.settings.telegram_username_whitelist.split(',') if u.strip()]
+
+            # Parse chat_ids from comma-separated string or single value
+            chat_ids = []
+            if self.settings.telegram_chat_id:
+                chat_ids = [c.strip() for c in str(self.settings.telegram_chat_id).split(',') if c.strip()]
+
             self.telegram_bot = TradingBotTelegram(
                 self.settings.telegram_token,
-                self.settings.telegram_chat_id,
-                database_url=self.settings.database_url
+                chat_id=chat_ids if chat_ids else None,
+                username_whitelist=whitelist,
+                database_url=self.settings.database_url,
+                broker=self.broker,
+                on_pause=lambda: self._set_paused(True),
+                on_resume=lambda: self._set_paused(False),
             )
             telegram_ready = await self.telegram_bot.initialize()
             if telegram_ready:
@@ -237,45 +252,6 @@ class TradingBot:
             logger.error(f"Unexpected error during setup: {e}")
             return False
 
-    def _build_broker_config(self) -> dict:
-        """Build broker configuration based on selected broker type.
-
-        Returns:
-            Dictionary with broker-specific credentials and config.
-
-        Raises:
-            ValueError: If required credentials are missing for selected broker.
-        """
-        broker_type = self.settings.broker.lower()
-
-        if broker_type == 'alpaca':
-            if not self.settings.alpaca_api_key or not self.settings.alpaca_secret_key:
-                raise ValueError(
-                    "Alpaca broker requires ALPACA_API_KEY and ALPACA_SECRET_KEY"
-                )
-            return {
-                'api_key': self.settings.alpaca_api_key,
-                'secret_key': self.settings.alpaca_secret_key,
-            }
-
-        elif broker_type == 'coinbase':
-            if (not self.settings.coinbase_api_key or
-                not self.settings.coinbase_secret_key or
-                not self.settings.coinbase_passphrase):
-                raise ValueError(
-                    "Coinbase broker requires COINBASE_API_KEY, COINBASE_SECRET_KEY, and COINBASE_PASSPHRASE"
-                )
-            return {
-                'api_key': self.settings.coinbase_api_key,
-                'secret_key': self.settings.coinbase_secret_key,
-                'passphrase': self.settings.coinbase_passphrase,
-            }
-
-        else:
-            raise ValueError(
-                f"Unsupported broker: {broker_type}. Supported: alpaca, coinbase"
-            )
-
     def _register_strategies(self) -> None:
         """Register all available strategy classes."""
         from trading_bot.strategies.examples.buy_and_hold import BuyAndHoldStrategy
@@ -313,6 +289,18 @@ class TradingBot:
         except Exception as e:
             logger.warning(f"Failed to record session start: {e}")
 
+    async def _set_paused(self, paused: bool) -> None:
+        """Set bot pause/resume state.
+
+        This is called by the Telegram bot to pause/resume trading.
+
+        Args:
+            paused: True to pause trading, False to resume
+        """
+        self._paused = paused
+        state = "paused" if paused else "resumed"
+        logger.info(f"Trading {state} via Telegram bot")
+
     def _get_all_symbols(self) -> List[str]:
         """Get all symbols from all strategies.
 
@@ -334,6 +322,11 @@ class TradingBot:
             return
 
         self._running = True
+
+        # Start Telegram bot polling in background
+        telegram_task = None
+        if self.telegram_bot:
+            telegram_task = asyncio.create_task(self.telegram_bot.start())
 
         try:
             await self._run_trading_loop()
@@ -504,6 +497,11 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"Error in strategy {strategy.name}: {e}")
 
+        # Check if trading is paused before executing signals
+        if self._paused:
+            logger.debug(f"Trading paused - skipping signal execution for {bar.symbol}")
+            return
+
         # Execute signals
         for strategy, signal in signals:
             logger.info(f"[{signal.symbol}] [{strategy.name}] Generated signal: {signal}")
@@ -516,9 +514,12 @@ class TradingBot:
                 # Record order to database
                 if self.trade_repo:
                     try:
-                        await self._record_trade_entry(strategy, signal, order_id)
+                        if signal.action == 'buy':
+                            await self._record_trade_entry(strategy, signal, order_id)
+                        elif signal.action == 'sell':
+                            await self._record_trade_exit(strategy, signal, order_id)
                     except Exception as e:
-                        logger.error(f"Failed to record trade entry: {e}")
+                        logger.error(f"Failed to record trade: {e}")
 
                 # Send Telegram alert
                 if self.telegram_bot:
@@ -569,6 +570,52 @@ class TradingBot:
             logger.info(f"Recorded trade entry #{trade_id} for {signal.symbol}")
         except Exception as e:
             logger.error(f"Failed to record trade entry: {e}")
+
+    async def _record_trade_exit(
+        self, strategy: BaseStrategy, signal, order_id: str
+    ) -> None:
+        """Record a trade exit and associate with the entry order.
+
+        Args:
+            strategy: The strategy that generated the signal
+            signal: The trading signal (sell)
+            order_id: The exit order ID from the broker
+        """
+        try:
+            # Find open trades for this symbol/strategy to match with exit
+            open_trades = await self.trade_repo.get_trades_by_symbol(signal.symbol)
+
+            # Filter for open trades (no exit yet) from the same strategy
+            open_trades_from_strategy = [
+                t for t in open_trades
+                if t['exit_order_id'] is None and t['strategy'] == strategy.name
+            ]
+
+            if not open_trades_from_strategy:
+                logger.warning(
+                    f"No open trades found for {signal.symbol} "
+                    f"from strategy {strategy.name} to record exit"
+                )
+                return
+
+            # Use the oldest open trade (FIFO matching)
+            trade_to_exit = open_trades_from_strategy[0]
+
+            # Get current price from metadata if available
+            exit_price = signal.metadata.get('price') if signal.metadata else None
+
+            await self.trade_repo.record_trade_exit(
+                trade_id=trade_to_exit['id'],
+                exit_price=Decimal(str(exit_price)) if exit_price else Decimal("0"),
+                exit_quantity=signal.quantity,
+                exit_order_id=order_id,
+            )
+            logger.info(
+                f"Recorded trade exit for trade #{trade_to_exit['id']} "
+                f"({signal.symbol}) with exit order {order_id}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to record trade exit: {e}")
 
     async def _monitor_health_checks(self) -> None:
         """Monitor health checks and log status periodically."""

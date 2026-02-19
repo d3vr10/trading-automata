@@ -112,6 +112,30 @@ class IBroker(ABC):
         pass
 
     @abstractmethod
+    def close_position(self, symbol: str) -> bool:
+        """Close/liquidate the full open position for a symbol.
+
+        Args:
+            symbol: Trading symbol (e.g., 'SPY', 'BTC-USD')
+
+        Returns:
+            True if position closed successfully, False if no position or failed.
+        """
+        pass
+
+    @abstractmethod
+    def cancel_all_orders(self, symbol: Optional[str] = None) -> List[str]:
+        """Cancel all open orders, optionally filtered by symbol.
+
+        Args:
+            symbol: Optional symbol to filter orders. If None, cancels all orders.
+
+        Returns:
+            List of cancelled order IDs.
+        """
+        pass
+
+    @abstractmethod
     def get_order(self, order_id: str) -> Dict[str, Any]:
         """Get order details.
 

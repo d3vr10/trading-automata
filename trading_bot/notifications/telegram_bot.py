@@ -9,21 +9,23 @@ Provides:
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from decimal import Decimal
 from datetime import datetime, UTC
 
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
+    CallbackQueryHandler,
 )
 from telegram.constants import ParseMode
-from sqlalchemy import select
-
-from trading_bot.database.models import DatabaseConnection, BotSession
+from sqlalchemy import select, func, and_
+from trading_bot.database.models import DatabaseConnection, BotSession, Trade, Position, HealthCheck
+from trading_bot.database.repository import TradeRepository
+from trading_bot.brokers.base import IBroker
 
 logger = logging.getLogger(__name__)
 
@@ -31,28 +33,67 @@ logger = logging.getLogger(__name__)
 class TradingBotTelegram:
     """Telegram bot interface for trading bot management."""
 
-    def __init__(self, token: str, chat_id: str, database_url: Optional[str] = None,
-                 pool_size: int = 10, max_overflow: int = 20):
+    def __init__(
+        self,
+        token: str,
+        chat_id: Optional[str | list[str]] = None,
+        username_whitelist: Optional[list[str]] = None,
+        database_url: Optional[str] = None,
+        broker: Optional[IBroker] = None,
+        on_pause: Optional[Callable[[], Any]] = None,
+        on_resume: Optional[Callable[[], Any]] = None,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+    ):
         """Initialize Telegram bot.
 
         Args:
             token: Telegram bot token from BotFather
-            chat_id: Telegram chat ID to send messages to
+            chat_id: Telegram chat ID(s) to send messages to (for notifications).
+                    Can be a single string or list of strings.
+                    Example: "123456789" or ["123456789", "987654321"]
+            username_whitelist: List of Telegram usernames allowed to use bot commands
+                               REQUIRED: If not provided or empty, all commands will be rejected.
+                               Example: ['username1', 'username2']
             database_url: PostgreSQL connection URL for accessing bot data
+            broker: Optional broker instance for position/order management
+            on_pause: Optional callback to execute when /pause is called
+            on_resume: Optional callback to execute when /resume is called
             pool_size: Database connection pool size
             max_overflow: Database connection pool overflow size
         """
         self.token = token
-        self.chat_id = chat_id
+
+        # Convert single chat_id to list, or use empty list if None
+        if isinstance(chat_id, str):
+            self.chat_ids = [chat_id]
+        elif isinstance(chat_id, list):
+            self.chat_ids = chat_id
+        else:
+            self.chat_ids = []
+
+        self.username_whitelist = set(u.lstrip('@').lower() for u in (username_whitelist or []))
         self.database_url = database_url
+        self.broker = broker
+        self._on_pause = on_pause
+        self._on_resume = on_resume
         self.pool_size = pool_size
         self.max_overflow = max_overflow
         self.database: Optional[DatabaseConnection] = None
         self.application: Optional[Application] = None
         self._bot = None
+        self._paused = False  # Track pause/resume state
 
         if not token:
             logger.warning("Telegram token not configured - bot notifications disabled")
+
+        if self.username_whitelist:
+            logger.info(f"Telegram whitelist enabled: {', '.join(self.username_whitelist)}")
+        else:
+            logger.warning("Telegram username whitelist not configured - bot commands will be rejected")
+
+        if self.chat_ids:
+            logger.info(f"Telegram notifications enabled for {len(self.chat_ids)} chat(s)")
 
     async def initialize(self) -> bool:
         """Initialize Telegram bot application.
@@ -92,11 +133,34 @@ class TradingBotTelegram:
             self.application.add_handler(
                 CommandHandler("uptime", self._cmd_uptime)
             )
+            self.application.add_handler(
+                CommandHandler("broker_positions", self._cmd_broker_positions)
+            )
+            self.application.add_handler(
+                CommandHandler("broker_orders", self._cmd_broker_orders)
+            )
+            self.application.add_handler(
+                CommandHandler("close_position", self._cmd_close_position)
+            )
+            self.application.add_handler(
+                CommandHandler("close_all_positions", self._cmd_close_all_positions)
+            )
+            self.application.add_handler(
+                CommandHandler("cancel_order", self._cmd_cancel_order)
+            )
+            self.application.add_handler(
+                CommandHandler("cancel_orders", self._cmd_cancel_orders)
+            )
+            self.application.add_handler(
+                CallbackQueryHandler(self._handle_confirmation)
+            )
 
             # Set bot commands
             await self._set_commands()
 
-            logger.info("✅ Telegram bot initialized")
+            # Start polling for incoming messages
+            await self.application.start()
+            logger.info("✅ Telegram bot initialized and polling for updates")
             return True
 
         except Exception as e:
@@ -113,6 +177,12 @@ class TradingBotTelegram:
             BotCommand("uptime", "Show bot uptime"),
             BotCommand("pause", "Pause trading"),
             BotCommand("resume", "Resume trading"),
+            BotCommand("broker_positions", "List open positions from broker"),
+            BotCommand("broker_orders", "List open orders from broker"),
+            BotCommand("close_position", "Close a position by symbol"),
+            BotCommand("close_all_positions", "Close all open positions"),
+            BotCommand("cancel_order", "Cancel an order by ID"),
+            BotCommand("cancel_orders", "Cancel multiple orders"),
             BotCommand("help", "Show available commands"),
         ]
         try:
@@ -121,28 +191,35 @@ class TradingBotTelegram:
             logger.warning(f"Could not set bot commands: {e}")
 
     async def send_message(self, text: str, parse_mode=ParseMode.HTML) -> bool:
-        """Send message to configured chat.
+        """Send message to configured chat(s).
 
         Args:
             text: Message text
             parse_mode: How to parse message (HTML, MARKDOWN, etc.)
 
         Returns:
-            True if sent successfully, False otherwise.
+            True if sent successfully to at least one chat, False otherwise.
         """
-        if not self.token or not self.chat_id:
+        if not self.token or not self.chat_ids:
             return False
 
         try:
             if not self.application:
                 await self.initialize()
 
-            await self.application.bot.send_message(
-                chat_id=self.chat_id,
-                text=text,
-                parse_mode=parse_mode,
-            )
-            return True
+            success_count = 0
+            for chat_id in self.chat_ids:
+                try:
+                    await self.application.bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=parse_mode,
+                    )
+                    success_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to send message to chat {chat_id}: {e}")
+
+            return success_count > 0
 
         except Exception as e:
             logger.error(f"Failed to send Telegram message: {e}")
@@ -233,81 +310,326 @@ class TradingBotTelegram:
 """
         await self.send_message(message)
 
+    # Authorization
+
+    async def _check_authorized(self, update: Update) -> bool:
+        """Check if user is authorized to use bot commands.
+
+        Args:
+            update: Telegram update with user info
+
+        Returns:
+            True if authorized, False otherwise
+        """
+        # If no whitelist configured, reject all command attempts
+        if not self.username_whitelist:
+            user = update.effective_user
+            username = f"@{user.username}" if user and user.username else "unknown user"
+            await update.message.reply_text(
+                "❌ <b>Not Authorized</b>\n\n"
+                "Bot commands are not available. "
+                "Administrator must configure TELEGRAM_USERNAME_WHITELIST to enable this feature.",
+                parse_mode=ParseMode.HTML,
+            )
+            logger.warning(f"Command rejected: no whitelist configured (user: {username})")
+            return False
+
+        # Check if user is in whitelist
+        user = update.effective_user
+        if not user or not user.username:
+            await update.message.reply_text(
+                "❌ <b>Not Authorized</b>\n\n"
+                "You must have a Telegram username to use this bot.",
+                parse_mode=ParseMode.HTML,
+            )
+            logger.warning(f"Unauthorized command attempt from user without username")
+            return False
+
+        username = user.username.lower()
+        if username not in self.username_whitelist:
+            await update.message.reply_text(
+                f"❌ <b>Not Authorized</b>\n\n"
+                f"User <code>@{username}</code> is not whitelisted to use this bot.",
+                parse_mode=ParseMode.HTML,
+            )
+            logger.warning(f"Unauthorized command attempt from @{username}")
+            return False
+
+        return True
+
     # Command handlers
 
     async def _cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command."""
-        message = """📊 <b>Trading Bot Status</b>
+        if not await self._check_authorized(update):
+            return
 
-<i>Status handler will be implemented when integrated with main bot</i>
+        try:
+            # Initialize database if needed
+            if not self.database and self.database_url:
+                self.database = DatabaseConnection(
+                    database_url=self.database_url,
+                    pool_size=self.pool_size,
+                    max_overflow=self.max_overflow,
+                )
 
-<b>Placeholder Info:</b>
-• Bot: Running
-• Strategy: RSI-ATR Trend
-• Broker: Alpaca (Paper)
-"""
-        await update.message.reply_html(message)
+            message = "📊 <b>Trading Bot Status</b>\n\n"
+
+            # Get open positions
+            if self.database:
+                async with self.database.session_factory() as session:
+                    # Get open positions
+                    stmt = select(Position).where(Position.is_open == True)
+                    result = await session.execute(stmt)
+                    positions = result.scalars().all()
+
+                    # Get latest trade
+                    stmt = select(Trade).order_by(Trade.entry_timestamp.desc()).limit(1)
+                    result = await session.execute(stmt)
+                    latest_trade = result.scalar_one_or_none()
+
+                    # Get health status
+                    stmt = select(HealthCheck).order_by(HealthCheck.checked_at.desc()).limit(1)
+                    result = await session.execute(stmt)
+                    health = result.scalar_one_or_none()
+
+            message += f"<b>Status:</b> {'🟢 RUNNING' if not self._paused else '🟡 PAUSED'}\n"
+            message += f"<b>Open Positions:</b> {len(positions) if self.database else 'N/A'}\n"
+
+            if positions:
+                total_pnl = sum(float(p.unrealized_pnl or 0) for p in positions)
+                message += f"<b>Unrealized P&L:</b> ${total_pnl:,.2f}\n\n"
+                message += "<b>Positions:</b>\n"
+                for pos in positions:
+                    message += f"• {pos.symbol}: {float(pos.quantity)} @ ${float(pos.entry_price)}\n"
+
+            if latest_trade:
+                message += f"\n<b>Last Trade:</b> {latest_trade.symbol} - {latest_trade.entry_timestamp.strftime('%H:%M:%S')}\n"
+
+            if health:
+                message += f"<b>Health:</b> {'🟢 Healthy' if health.is_healthy else '🔴 Unhealthy'}\n"
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /status command: {e}")
+            await update.message.reply_text(f"❌ Error retrieving status: {str(e)}")
 
     async def _cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /trades command."""
-        message = """📈 <b>Recent Trades</b>
+        if not await self._check_authorized(update):
+            return
 
-<i>Trade history will be fetched from database when integrated</i>
+        try:
+            if not self.database and self.database_url:
+                self.database = DatabaseConnection(
+                    database_url=self.database_url,
+                    pool_size=self.pool_size,
+                    max_overflow=self.max_overflow,
+                )
 
-<b>Placeholder:</b>
-Last 5 trades will appear here
-"""
-        await update.message.reply_html(message)
+            message = "📈 <b>Recent Trades</b>\n\n"
+
+            if not self.database:
+                message += "<i>Database not configured</i>"
+                await update.message.reply_html(message)
+                return
+
+            async with self.database.session_factory() as session:
+                # Get last 10 closed trades
+                stmt = (
+                    select(Trade)
+                    .where(Trade.exit_order_id != None)
+                    .order_by(Trade.entry_timestamp.desc())
+                    .limit(10)
+                )
+                result = await session.execute(stmt)
+                trades = result.scalars().all()
+
+            if not trades:
+                message += "<i>No closed trades yet</i>"
+            else:
+                message += f"<b>Last {len(trades)} Closed Trades:</b>\n\n"
+                for trade in trades:
+                    pnl_emoji = "✅" if trade.is_winning_trade else "❌"
+                    pnl_str = f"${float(trade.gross_pnl):,.2f}" if trade.gross_pnl else "N/A"
+                    pnl_pct = f" ({float(trade.pnl_percent):.1f}%)" if trade.pnl_percent else ""
+
+                    message += (
+                        f"{pnl_emoji} <b>{trade.symbol}</b>\n"
+                        f"  Entry: ${float(trade.entry_price):.4f} × {float(trade.entry_quantity)}\n"
+                        f"  Exit: ${float(trade.exit_price):.4f} × {float(trade.exit_quantity)}\n"
+                        f"  P&L: {pnl_str}{pnl_pct}\n"
+                        f"  Strategy: {trade.strategy}\n\n"
+                    )
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /trades command: {e}")
+            await update.message.reply_text(f"❌ Error retrieving trades: {str(e)}")
 
     async def _cmd_metrics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /metrics command."""
-        message = """📊 <b>Performance Metrics</b>
+        if not await self._check_authorized(update):
+            return
 
-<i>Metrics will be fetched from database when integrated</i>
+        try:
+            if not self.database and self.database_url:
+                self.database = DatabaseConnection(
+                    database_url=self.database_url,
+                    pool_size=self.pool_size,
+                    max_overflow=self.max_overflow,
+                )
 
-<b>Placeholder:</b>
-Win Rate, Profit Factor, Sharpe Ratio will appear here
-"""
-        await update.message.reply_html(message)
+            message = "📊 <b>Performance Metrics</b>\n\n"
+
+            if not self.database:
+                message += "<i>Database not configured</i>"
+                await update.message.reply_html(message)
+                return
+
+            async with self.database.session_factory() as session:
+                # Get all closed trades
+                stmt = select(Trade).where(Trade.exit_order_id != None)
+                result = await session.execute(stmt)
+                all_trades = result.scalars().all()
+
+                # Get open trades
+                stmt = select(Trade).where(Trade.exit_order_id == None)
+                result = await session.execute(stmt)
+                open_trades = result.scalars().all()
+
+            if not all_trades:
+                message += "<i>No trades yet</i>"
+                await update.message.reply_html(message)
+                return
+
+            # Calculate metrics
+            total_trades = len(all_trades)
+            winning_trades = sum(1 for t in all_trades if t.is_winning_trade)
+            losing_trades = total_trades - winning_trades
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+
+            gross_profit = sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) > 0)
+            gross_loss = abs(sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) < 0))
+            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+            total_pnl = gross_profit - gross_loss
+
+            message += f"<b>Total Trades:</b> {total_trades} ✅ {winning_trades} ❌ {losing_trades}\n"
+            message += f"<b>Win Rate:</b> {win_rate:.1f}%\n"
+            message += f"<b>Gross Profit:</b> ${gross_profit:,.2f}\n"
+            message += f"<b>Gross Loss:</b> -${gross_loss:,.2f}\n"
+            message += f"<b>Total P&L:</b> ${total_pnl:,.2f}\n"
+            message += f"<b>Profit Factor:</b> {profit_factor:.2f}\n"
+            message += f"<b>Open Positions:</b> {len(open_trades)}\n"
+
+            # Per-strategy breakdown
+            strategies = {}
+            for trade in all_trades:
+                if trade.strategy not in strategies:
+                    strategies[trade.strategy] = {"wins": 0, "total": 0, "pnl": 0}
+                strategies[trade.strategy]["total"] += 1
+                if trade.is_winning_trade:
+                    strategies[trade.strategy]["wins"] += 1
+                strategies[trade.strategy]["pnl"] += float(trade.gross_pnl or 0)
+
+            if strategies:
+                message += "\n<b>By Strategy:</b>\n"
+                for strat, data in strategies.items():
+                    wr = (data["wins"] / data["total"] * 100) if data["total"] > 0 else 0
+                    message += f"• {strat}: {data['total']} trades, {wr:.0f}% WR, ${data['pnl']:,.2f}\n"
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /metrics command: {e}")
+            await update.message.reply_text(f"❌ Error retrieving metrics: {str(e)}")
 
     async def _cmd_pause(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /pause command."""
+        if not await self._check_authorized(update):
+            return
+
+        # Call pause callback if provided
+        if self._on_pause:
+            try:
+                result = self._on_pause()
+                # Handle async callbacks
+                if hasattr(result, '__await__'):
+                    await result
+            except Exception as e:
+                logger.error(f"Error calling pause callback: {e}")
+
+        self._paused = True
         message = """⏸️ <b>Pause Trading</b>
 
-Trading has been paused. The bot will stop executing new trades.
+✅ Trading has been paused. The bot will stop executing new trades.
 Current positions will remain open.
 """
         await update.message.reply_html(message)
+        logger.info(f"Trading paused by @{update.effective_user.username}")
 
     async def _cmd_resume(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
         """Handle /resume command."""
+        if not await self._check_authorized(update):
+            return
+
+        # Call resume callback if provided
+        if self._on_resume:
+            try:
+                result = self._on_resume()
+                # Handle async callbacks
+                if hasattr(result, '__await__'):
+                    await result
+            except Exception as e:
+                logger.error(f"Error calling resume callback: {e}")
+
+        self._paused = False
         message = """▶️ <b>Resume Trading</b>
 
-Trading has been resumed. The bot will resume executing trades.
+✅ Trading has been resumed. The bot will resume executing trades.
 """
         await update.message.reply_html(message)
+        logger.info(f"Trading resumed by @{update.effective_user.username}")
 
     async def _cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
+        if not await self._check_authorized(update):
+            return
+
         message = """❓ <b>Available Commands</b>
 
+<b>Status & Analytics:</b>
 <b>/status</b> - Show bot status and portfolio
 <b>/trades</b> - Show recent trades (last 10)
 <b>/metrics</b> - Show performance metrics
 <b>/version</b> - Show bot version
 <b>/uptime</b> - Show bot uptime
+
+<b>Trading Control:</b>
 <b>/pause</b> - Pause trading
 <b>/resume</b> - Resume trading
-<b>/help</b> - Show this help message
 
-<i>Use /start to see all commands</i>
+<b>Broker Management:</b>
+<b>/broker_positions</b> - List open positions from broker
+<b>/broker_orders</b> - List open orders from broker
+<b>/close_position SYMBOL</b> - Close a position (e.g. /close_position SPY)
+<b>/close_all_positions</b> - Close all open positions
+<b>/cancel_order ID</b> - Cancel an order by ID
+<b>/cancel_orders [SYMBOL]</b> - Cancel all orders (optionally for a symbol)
+
+<b>/help</b> - Show this help message
 """
         await update.message.reply_html(message)
 
     async def _cmd_version(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /version command."""
+        if not await self._check_authorized(update):
+            return
+
         try:
             import tomllib  # Python 3.11+
         except ModuleNotFoundError:
@@ -329,6 +651,9 @@ Trading has been resumed. The bot will resume executing trades.
 
     async def _cmd_uptime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /uptime command."""
+        if not await self._check_authorized(update):
+            return
+
         if not self.database_url:
             message = """⏱️ <b>Bot Uptime</b>
 
@@ -353,7 +678,11 @@ Database not configured - cannot retrieve uptime.
                 bot_session = result.scalar_one_or_none()
 
             if bot_session:
+                # Ensure timezone-aware datetime (add UTC if naive)
                 start_time = bot_session.started_at
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=UTC)
+
                 now = datetime.now(UTC)
                 uptime_delta = now - start_time
                 hours = uptime_delta.seconds // 3600
@@ -378,6 +707,383 @@ No bot session found - bot may not have started yet.
             logger.error(f"Failed to get uptime: {e}")
             message = f"Error retrieving uptime: {str(e)}"
             await update.message.reply_text(message)
+
+    # Broker Management Commands
+
+    async def _cmd_broker_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broker_positions command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        try:
+            positions = self.broker.get_positions()
+
+            if not positions:
+                message = "📊 <b>Open Positions</b>\n\n<i>No open positions</i>"
+                await update.message.reply_html(message)
+                return
+
+            message = f"📊 <b>Open Positions ({len(positions)})</b>\n\n"
+            for i, pos in enumerate(positions, 1):
+                symbol = pos.get('symbol', 'N/A')
+                qty = float(pos.get('qty', 0))
+                entry_price = float(pos.get('avg_fill_price', 0))
+                current_price = float(pos.get('current_price', 0))
+                pnl = float(pos.get('unrealized_pl', 0))
+                pnl_color = "🟢" if pnl >= 0 else "🔴"
+
+                message += f"{i}. <b>{symbol}</b>\n"
+                message += f"   Qty: {qty}\n"
+                message += f"   Entry: ${entry_price:.4f}\n"
+                message += f"   Current: ${current_price:.4f}\n"
+                message += f"   P&L: {pnl_color} ${pnl:,.2f}\n\n"
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /broker_positions: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_broker_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broker_orders command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        try:
+            # Parse optional symbol and status filters
+            symbol_filter = None
+            status_filter = None
+
+            if context.args:
+                for arg in context.args:
+                    if arg.upper() in ('OPEN', 'CLOSED', 'PENDING', 'CANCELLED'):
+                        status_filter = arg.lower()
+                    else:
+                        symbol_filter = arg.upper()
+
+            orders = self.broker.get_orders(status=status_filter, limit=50)
+
+            if symbol_filter:
+                orders = [o for o in orders if o.get('symbol', '').upper().startswith(symbol_filter)]
+
+            if not orders:
+                message = "📋 <b>Open Orders</b>\n\n<i>No open orders</i>"
+                await update.message.reply_html(message)
+                return
+
+            message = f"📋 <b>Open Orders ({len(orders)})</b>\n\n"
+            for i, order in enumerate(orders, 1):
+                order_id = str(order.get('id', 'N/A'))[:8]
+                symbol = order.get('symbol', 'N/A')
+                side = order.get('side', 'N/A').upper()
+                side_emoji = "📈" if side == "BUY" else "📉"
+                qty = float(order.get('qty', 0))
+                status = order.get('status', 'N/A').upper()
+                created_at = order.get('created_at', 'N/A')
+                if isinstance(created_at, str) and 'T' in created_at:
+                    created_at = created_at.split('T')[1][:5]
+
+                message += f"{i}. {side_emoji} <b>{symbol}</b> {side}\n"
+                message += f"   ID: <code>{order_id}...</code>\n"
+                message += f"   Qty: {qty}\n"
+                message += f"   Status: {status}\n"
+                message += f"   Created: {created_at}\n\n"
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /broker_orders: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_close_position(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /close_position SYMBOL command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text("❌ Usage: /close_position SYMBOL")
+            return
+
+        symbol = context.args[0].upper()
+
+        try:
+            # Get position details
+            position = self.broker.get_position(symbol)
+
+            if not position:
+                await update.message.reply_text(f"❌ No position found for {symbol}")
+                return
+
+            qty = float(position.get('qty', 0))
+            entry_price = float(position.get('avg_fill_price', 0))
+            current_price = float(position.get('current_price', 0))
+            pnl = float(position.get('unrealized_pl', 0))
+            pnl_color = "🟢" if pnl >= 0 else "🔴"
+
+            # Show position details and ask for confirmation
+            message = f"⚠️ <b>Close Position - Confirm?</b>\n\n"
+            message += f"<b>Symbol:</b> {symbol}\n"
+            message += f"<b>Quantity:</b> {qty}\n"
+            message += f"<b>Entry Price:</b> ${entry_price:.4f}\n"
+            message += f"<b>Current Price:</b> ${current_price:.4f}\n"
+            message += f"<b>Unrealized P&L:</b> {pnl_color} ${pnl:,.2f}\n\n"
+            message += "Are you sure you want to close this position?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Close Position", callback_data=f"close_pos:{symbol}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /close_position: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_close_all_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /close_all_positions command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        try:
+            positions = self.broker.get_positions()
+
+            if not positions:
+                await update.message.reply_text("ℹ️ No open positions to close")
+                return
+
+            # Show all positions and ask for confirmation
+            message = f"⚠️ <b>Close All Positions - Confirm?</b>\n\n"
+            message += f"<b>Total Positions:</b> {len(positions)}\n\n"
+
+            total_pnl = 0
+            for i, pos in enumerate(positions, 1):
+                symbol = pos.get('symbol', 'N/A')
+                qty = float(pos.get('qty', 0))
+                pnl = float(pos.get('unrealized_pl', 0))
+                total_pnl += pnl
+
+                message += f"{i}. <b>{symbol}</b> (Qty: {qty})\n"
+
+            pnl_color = "🟢" if total_pnl >= 0 else "🔴"
+            message += f"\n<b>Total P&L:</b> {pnl_color} ${total_pnl:,.2f}\n\n"
+            message += "Are you sure you want to close ALL positions?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Close All", callback_data="close_all_pos"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /close_all_positions: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /cancel_order ORDER_ID command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text("❌ Usage: /cancel_order ORDER_ID")
+            return
+
+        order_id = context.args[0]
+
+        try:
+            # Get order details
+            order = self.broker.get_order(order_id)
+
+            if not order:
+                await update.message.reply_text(f"❌ Order not found: {order_id}")
+                return
+
+            symbol = order.get('symbol', 'N/A')
+            side = order.get('side', 'N/A').upper()
+            qty = float(order.get('qty', 0))
+            status = order.get('status', 'N/A').upper()
+            side_emoji = "📈" if side == "BUY" else "📉"
+
+            # Show order details and ask for confirmation
+            message = f"⚠️ <b>Cancel Order - Confirm?</b>\n\n"
+            message += f"{side_emoji} <b>{symbol}</b>\n"
+            message += f"<b>Side:</b> {side}\n"
+            message += f"<b>Quantity:</b> {qty}\n"
+            message += f"<b>Status:</b> {status}\n"
+            message += f"<b>ID:</b> <code>{order_id}</code>\n\n"
+            message += "Are you sure you want to cancel this order?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Cancel Order", callback_data=f"cancel_ord:{order_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /cancel_order: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_cancel_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /cancel_orders [SYMBOL] command."""
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker:
+            await update.message.reply_text("❌ Broker not configured")
+            return
+
+        try:
+            symbol_filter = None
+            if context.args and len(context.args) > 0:
+                symbol_filter = context.args[0].upper()
+
+            orders = self.broker.get_orders(status='open', limit=100)
+
+            if symbol_filter:
+                orders = [o for o in orders if o.get('symbol', '').upper().startswith(symbol_filter)]
+
+            if not orders:
+                await update.message.reply_text("ℹ️ No open orders to cancel")
+                return
+
+            # Show orders to be cancelled and ask for confirmation
+            message = f"⚠️ <b>Cancel Orders - Confirm?</b>\n\n"
+            message += f"<b>Total Orders:</b> {len(orders)}\n\n"
+
+            for i, order in enumerate(orders[:10], 1):  # Show first 10
+                symbol = order.get('symbol', 'N/A')
+                side = order.get('side', 'N/A').upper()
+                side_emoji = "📈" if side == "BUY" else "📉"
+                qty = float(order.get('qty', 0))
+
+                message += f"{i}. {side_emoji} <b>{symbol}</b> {side} {qty}\n"
+
+            if len(orders) > 10:
+                message += f"... and {len(orders) - 10} more\n"
+
+            message += f"\nAre you sure you want to cancel all these orders?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Cancel All", callback_data=f"cancel_ords:{symbol_filter or ''}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /cancel_orders: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _handle_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle confirmation callbacks from inline keyboards."""
+        if not await self._check_authorized(update):
+            return
+
+        query = update.callback_query
+        await query.answer()
+
+        try:
+            action = query.data
+
+            # Handle close position
+            if action.startswith("close_pos:"):
+                symbol = action.split(":")[1]
+                result = self.broker.close_position(symbol)
+                if result:
+                    await query.edit_message_text(f"✅ Position closed: {symbol}")
+                    logger.info(f"Position closed via Telegram: {symbol}")
+                else:
+                    await query.edit_message_text(f"❌ Failed to close position: {symbol}")
+                return
+
+            # Handle close all positions
+            if action == "close_all_pos":
+                positions = self.broker.get_positions()
+                closed_count = 0
+                failed_symbols = []
+
+                for pos in positions:
+                    symbol = pos.get('symbol')
+                    if self.broker.close_position(symbol):
+                        closed_count += 1
+                    else:
+                        failed_symbols.append(symbol)
+
+                message = f"✅ Closed {closed_count} positions"
+                if failed_symbols:
+                    message += f"\n❌ Failed: {', '.join(failed_symbols)}"
+                await query.edit_message_text(message)
+                logger.info(f"Closed {closed_count} positions via Telegram")
+                return
+
+            # Handle cancel order
+            if action.startswith("cancel_ord:"):
+                order_id = action.split(":")[1]
+                result = self.broker.cancel_order(order_id)
+                if result:
+                    await query.edit_message_text(f"✅ Order cancelled: {order_id}")
+                    logger.info(f"Order cancelled via Telegram: {order_id}")
+                else:
+                    await query.edit_message_text(f"❌ Failed to cancel order: {order_id}")
+                return
+
+            # Handle cancel all orders
+            if action.startswith("cancel_ords:"):
+                symbol_filter = action.split(":")[1] or None
+                cancelled_ids = self.broker.cancel_all_orders(symbol=symbol_filter)
+
+                if cancelled_ids:
+                    await query.edit_message_text(
+                        f"✅ Cancelled {len(cancelled_ids)} orders"
+                        + (f" for {symbol_filter}" if symbol_filter else "")
+                    )
+                    logger.info(f"Cancelled {len(cancelled_ids)} orders via Telegram")
+                else:
+                    await query.edit_message_text("ℹ️ No orders were cancelled")
+                return
+
+            # Handle cancel
+            if action == "cancel":
+                await query.edit_message_text("❌ Cancelled")
+                return
+
+        except Exception as e:
+            logger.error(f"Error in confirmation handler: {e}")
+            await query.edit_message_text(f"❌ Error: {str(e)}")
 
     async def start(self) -> None:
         """Start the bot polling (background task)."""

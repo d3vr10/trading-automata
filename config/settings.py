@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     # Telegram bot configuration
     telegram_token: str = Field('', env='TELEGRAM_TOKEN')
     telegram_chat_id: str = Field('', env='TELEGRAM_CHAT_ID')
+    telegram_username_whitelist: str = Field('', env='TELEGRAM_USERNAME_WHITELIST')
 
     # Health check configuration
     health_check_interval: int = Field(300, env='HEALTH_CHECK_INTERVAL')
