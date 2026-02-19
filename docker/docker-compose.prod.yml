@@ -26,6 +26,9 @@ services:
       - "--global.checkNewVersion=false"
       - "--global.sendAnonymousUsage=false"
 
+      # Logging
+      - "--log.level=INFO"
+
       # Entrypoints
       - "--entrypoints.http.address=:80"
       - "--entrypoints.websecure.address=:443"
