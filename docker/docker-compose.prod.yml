@@ -48,7 +48,6 @@ services:
 
       # TLS Configuration: Use Let's Encrypt; Traefik auto-generates self-signed as fallback
       - "--entrypoints.websecure.http.tls.certResolver=letsencrypt"
-      - "--entrypoints.websecure.http.tls.certStore=default"
     networks:
       - traefik-network
     logging:
