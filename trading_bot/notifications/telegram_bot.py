@@ -42,6 +42,9 @@ class TradingBotTelegram:
         broker: Optional[IBroker] = None,
         on_pause: Optional[Callable[[], Any]] = None,
         on_resume: Optional[Callable[[], Any]] = None,
+        webhook_url: str = '',
+        webhook_secret: str = '',
+        webhook_port: int = 8080,
         pool_size: int = 10,
         max_overflow: int = 20,
     ):
@@ -59,10 +62,16 @@ class TradingBotTelegram:
             broker: Optional broker instance for position/order management
             on_pause: Optional callback to execute when /pause is called
             on_resume: Optional callback to execute when /resume is called
+            webhook_url: Webhook URL for production (e.g., https://example.com)
+            webhook_secret: Secret token for webhook validation
+            webhook_port: Port for webhook server to listen on (default 8080)
             pool_size: Database connection pool size
             max_overflow: Database connection pool overflow size
         """
         self.token = token
+        self.webhook_url = webhook_url
+        self.webhook_secret = webhook_secret
+        self.webhook_port = webhook_port
 
         # Convert single chat_id to list, or use empty list if None
         if isinstance(chat_id, str):
@@ -158,9 +167,7 @@ class TradingBotTelegram:
             # Set bot commands
             await self._set_commands()
 
-            # Start polling for incoming messages
-            await self.application.start()
-            logger.info("✅ Telegram bot initialized and polling for updates")
+            logger.info("✅ Telegram bot initialized")
             return True
 
         except Exception as e:
@@ -1086,16 +1093,39 @@ No bot session found - bot may not have started yet.
             await query.edit_message_text(f"❌ Error: {str(e)}")
 
     async def start(self) -> None:
-        """Start the bot polling (background task)."""
+        """Start the bot in webhook or polling mode (background task).
+
+        Tries webhook mode if webhook_url is configured, falls back to polling if it fails.
+        """
         if not self.application:
             return
 
         try:
-            logger.info("Starting Telegram bot polling...")
             await self.application.initialize()
             await self.application.start()
+
+            # Try webhook mode if configured
+            if self.webhook_url:
+                try:
+                    logger.info(f"Starting Telegram bot in webhook mode on port {self.webhook_port}...")
+                    await self.application.updater.start_webhook(
+                        listen="0.0.0.0",
+                        port=self.webhook_port,
+                        url_path=f"webhook/{self.token}",
+                        secret_token=self.webhook_secret or None,
+                        webhook_url=f"{self.webhook_url}/webhook/{self.token}",
+                        allowed_updates=Update.ALL_TYPES,
+                    )
+                    logger.info(f"✅ Telegram webhook active at {self.webhook_url}/webhook/{self.token}")
+                    return
+                except Exception as e:
+                    logger.warning(f"Webhook setup failed: {e} — falling back to polling mode")
+
+            # Polling mode (default or fallback)
+            logger.info("Starting Telegram bot in polling mode...")
             await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
             logger.info("✅ Telegram bot polling started")
+
         except Exception as e:
             logger.error(f"Failed to start Telegram bot: {e}")
 

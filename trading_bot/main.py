@@ -195,6 +195,9 @@ class TradingBot:
                 broker=self.broker,
                 on_pause=lambda: self._set_paused(True),
                 on_resume=lambda: self._set_paused(False),
+                webhook_url=self.settings.telegram_webhook_url,
+                webhook_secret=self.settings.telegram_webhook_secret,
+                webhook_port=self.settings.telegram_webhook_port,
             )
             telegram_ready = await self.telegram_bot.initialize()
             if telegram_ready:

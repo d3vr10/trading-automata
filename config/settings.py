@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     telegram_chat_id: str = Field('', env='TELEGRAM_CHAT_ID')
     telegram_username_whitelist: str = Field('', env='TELEGRAM_USERNAME_WHITELIST')
 
+    # Telegram webhook configuration (optional - for production with HTTPS)
+    telegram_webhook_url: str = Field('', env='TELEGRAM_WEBHOOK_URL')
+    telegram_webhook_secret: str = Field('', env='TELEGRAM_WEBHOOK_SECRET')
+    telegram_webhook_port: int = Field(8080, env='TELEGRAM_WEBHOOK_PORT')
+
     # Health check configuration
     health_check_interval: int = Field(300, env='HEALTH_CHECK_INTERVAL')
 
