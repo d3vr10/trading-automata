@@ -161,6 +161,12 @@ class TradingBotTelegram:
                 CommandHandler("cancel_orders", self._cmd_cancel_orders)
             )
             self.application.add_handler(
+                CommandHandler("close_strategy", self._cmd_close_strategy)
+            )
+            self.application.add_handler(
+                CommandHandler("cancel_strategy", self._cmd_cancel_strategy)
+            )
+            self.application.add_handler(
                 CommandHandler("strategies", self._cmd_strategies)
             )
             self.application.add_handler(
@@ -195,8 +201,10 @@ class TradingBotTelegram:
             BotCommand("broker_orders", "List open orders from broker"),
             BotCommand("close_position", "Close a position by symbol"),
             BotCommand("close_all_positions", "Close all open positions"),
+            BotCommand("close_strategy", "Close all positions from a strategy"),
             BotCommand("cancel_order", "Cancel an order by ID"),
             BotCommand("cancel_orders", "Cancel multiple orders"),
+            BotCommand("cancel_strategy", "Cancel all orders from a strategy"),
             BotCommand("help", "Show available commands"),
         ]
         try:
@@ -779,8 +787,10 @@ Current positions will remain open.
 <b>/broker_orders</b> - Broker's open orders (real-time)
 <b>/close_position SYMBOL</b> - Close position (e.g. /close_position SPY)
 <b>/close_all_positions</b> - Close all positions
+<b>/close_strategy STRATEGY</b> - Close all positions from a strategy
 <b>/cancel_order ID</b> - Cancel a specific order
 <b>/cancel_orders [SYMBOL]</b> - Cancel all orders [for a symbol]
+<b>/cancel_strategy STRATEGY</b> - Cancel all orders from a strategy
 
 <b>ℹ️ Info:</b>
 <b>/version</b> - Bot version & timestamp
@@ -1222,6 +1232,159 @@ No bot session found - bot may not have started yet.
             logger.error(f"Error in /cancel_orders: {e}")
             await update.message.reply_text(f"❌ Error: {str(e)}")
 
+    async def _cmd_close_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /close_strategy STRATEGY_NAME command.
+
+        Closes all positions opened by a specific strategy.
+        """
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker or not self.database:
+            await update.message.reply_text("❌ Broker or database not configured")
+            return
+
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text("❌ Usage: /close_strategy STRATEGY_NAME")
+            return
+
+        strategy_name = " ".join(context.args)
+
+        try:
+            # Get all open positions for this strategy from database
+            async with self.database.get_session() as session:
+                positions_query = select(Position).where(
+                    and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                )
+                result = await session.execute(positions_query)
+                db_positions = result.scalars().all()
+
+            if not db_positions:
+                await update.message.reply_text(f"ℹ️ No open positions for strategy: {strategy_name}")
+                return
+
+            # Get current position details from broker
+            broker_positions = {p.get('symbol'): p for p in self.broker.get_positions()}
+
+            positions_to_close = []
+            for db_pos in db_positions:
+                if db_pos.symbol in broker_positions:
+                    positions_to_close.append(db_pos)
+
+            if not positions_to_close:
+                await update.message.reply_text(f"ℹ️ No open positions in broker for strategy: {strategy_name}")
+                return
+
+            # Show positions and ask for confirmation
+            message = f"⚠️ <b>Close Strategy Positions - Confirm?</b>\n\n"
+            message += f"<b>Strategy:</b> {strategy_name}\n"
+            message += f"<b>Total Positions:</b> {len(positions_to_close)}\n\n"
+
+            total_pnl = 0
+            for i, pos in enumerate(positions_to_close, 1):
+                broker_pos = broker_positions.get(pos.symbol, {})
+                qty = float(broker_pos.get('qty', 0))
+                pnl = float(broker_pos.get('unrealized_pl', 0))
+                total_pnl += pnl
+
+                pnl_color = "🟢" if pnl >= 0 else "🔴"
+                message += f"{i}. <b>{pos.symbol}</b> (Qty: {qty}) {pnl_color} ${pnl:,.2f}\n"
+
+            pnl_color = "🟢" if total_pnl >= 0 else "🔴"
+            message += f"\n<b>Total P&L:</b> {pnl_color} ${total_pnl:,.2f}\n\n"
+            message += "Are you sure you want to close ALL positions from this strategy?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Close All", callback_data=f"close_strat:{strategy_name}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /close_strategy: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _cmd_cancel_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /cancel_strategy STRATEGY_NAME command.
+
+        Cancels all pending orders for a specific strategy's symbols.
+        """
+        if not await self._check_authorized(update):
+            return
+
+        if not self.broker or not self.database:
+            await update.message.reply_text("❌ Broker or database not configured")
+            return
+
+        if not context.args or len(context.args) == 0:
+            await update.message.reply_text("❌ Usage: /cancel_strategy STRATEGY_NAME")
+            return
+
+        strategy_name = " ".join(context.args)
+
+        try:
+            # Get all open positions for this strategy from database
+            async with self.database.get_session() as session:
+                positions_query = select(Position).where(
+                    and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                )
+                result = await session.execute(positions_query)
+                db_positions = result.scalars().all()
+
+            if not db_positions:
+                await update.message.reply_text(f"ℹ️ No open positions for strategy: {strategy_name}")
+                return
+
+            # Get symbols for this strategy
+            strategy_symbols = set(pos.symbol for pos in db_positions)
+
+            # Get all open orders from broker
+            all_orders = self.broker.get_orders(status='open', limit=100)
+
+            # Filter orders to only those for strategy symbols
+            orders_to_cancel = [o for o in all_orders if o.get('symbol', '').upper() in strategy_symbols]
+
+            if not orders_to_cancel:
+                await update.message.reply_text(f"ℹ️ No open orders for strategy: {strategy_name}")
+                return
+
+            # Show orders to be cancelled and ask for confirmation
+            message = f"⚠️ <b>Cancel Strategy Orders - Confirm?</b>\n\n"
+            message += f"<b>Strategy:</b> {strategy_name}\n"
+            message += f"<b>Total Orders:</b> {len(orders_to_cancel)}\n"
+            message += f"<b>Symbols:</b> {', '.join(sorted(strategy_symbols))}\n\n"
+
+            for i, order in enumerate(orders_to_cancel[:10], 1):  # Show first 10
+                symbol = order.get('symbol', 'N/A')
+                side = order.get('side', 'N/A').upper()
+                side_emoji = "📈" if side == "BUY" else "📉"
+                qty = float(order.get('qty', 0))
+
+                message += f"{i}. {side_emoji} <b>{symbol}</b> {side} {qty}\n"
+
+            if len(orders_to_cancel) > 10:
+                message += f"... and {len(orders_to_cancel) - 10} more\n"
+
+            message += f"\nAre you sure you want to cancel ALL orders for this strategy?"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Cancel All", callback_data=f"cancel_strat:{strategy_name}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
+        except Exception as e:
+            logger.error(f"Error in /cancel_strategy: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+
     async def _handle_trades_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /trades button callbacks for quick filtering."""
         query = update.callback_query
@@ -1319,6 +1482,79 @@ No bot session found - bot may not have started yet.
                     logger.info(f"Cancelled {len(cancelled_ids)} orders via Telegram")
                 else:
                     await query.edit_message_text("ℹ️ No orders were cancelled")
+                return
+
+            # Handle close strategy positions
+            if action.startswith("close_strat:"):
+                strategy_name = action.split(":", 1)[1]
+
+                # Get all open positions for this strategy from database
+                try:
+                    async with self.database.get_session() as session:
+                        positions_query = select(Position).where(
+                            and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                        )
+                        result = await session.execute(positions_query)
+                        db_positions = result.scalars().all()
+                except Exception as e:
+                    await query.edit_message_text(f"❌ Database error: {str(e)}")
+                    return
+
+                # Get current positions from broker
+                broker_positions = {p.get('symbol'): p for p in self.broker.get_positions()}
+                closed_count = 0
+                failed_symbols = []
+
+                for pos in db_positions:
+                    if pos.symbol in broker_positions:
+                        if self.broker.close_position(pos.symbol):
+                            closed_count += 1
+                        else:
+                            failed_symbols.append(pos.symbol)
+
+                message = f"✅ Closed {closed_count} positions from strategy '{strategy_name}'"
+                if failed_symbols:
+                    message += f"\n❌ Failed: {', '.join(failed_symbols)}"
+                await query.edit_message_text(message)
+                logger.info(f"Closed {closed_count} positions from strategy '{strategy_name}' via Telegram")
+                return
+
+            # Handle cancel strategy orders
+            if action.startswith("cancel_strat:"):
+                strategy_name = action.split(":", 1)[1]
+
+                # Get symbols for this strategy from database
+                try:
+                    async with self.database.get_session() as session:
+                        positions_query = select(Position).where(
+                            and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                        )
+                        result = await session.execute(positions_query)
+                        db_positions = result.scalars().all()
+                except Exception as e:
+                    await query.edit_message_text(f"❌ Database error: {str(e)}")
+                    return
+
+                strategy_symbols = set(pos.symbol for pos in db_positions)
+
+                # Get all open orders and filter by strategy symbols
+                all_orders = self.broker.get_orders(status='open', limit=100)
+                orders_to_cancel = [o for o in all_orders if o.get('symbol', '').upper() in strategy_symbols]
+
+                # Cancel the orders
+                cancelled_ids = []
+                for order in orders_to_cancel:
+                    try:
+                        if self.broker.cancel_order(order.get('id')):
+                            cancelled_ids.append(order.get('id'))
+                    except Exception as e:
+                        logger.warning(f"Failed to cancel order {order.get('id')}: {e}")
+
+                message = f"✅ Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}'"
+                if len(orders_to_cancel) > len(cancelled_ids):
+                    message += f"\n⚠️ {len(orders_to_cancel) - len(cancelled_ids)} orders failed to cancel"
+                await query.edit_message_text(message)
+                logger.info(f"Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}' via Telegram")
                 return
 
             # Handle cancel
