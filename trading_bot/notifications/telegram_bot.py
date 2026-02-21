@@ -437,7 +437,13 @@ class TradingBotTelegram:
             await update.message.reply_text(f"❌ Error retrieving status: {str(e)}")
 
     async def _cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /trades command."""
+        """Handle /trades command with optional filter.
+
+        Usage:
+            /trades          - Show both open and closed trades
+            /trades open     - Show only open trades
+            /trades closed   - Show only closed trades
+        """
         if not await self._check_authorized(update):
             return
 
@@ -449,7 +455,17 @@ class TradingBotTelegram:
                     max_overflow=self.max_overflow,
                 )
 
-            message = "📈 <b>Recent Trades</b>\n\n"
+            # Parse filter from args
+            filter_type = None
+            if context.args and len(context.args) > 0:
+                filter_type = context.args[0].lower()
+                if filter_type not in ('open', 'closed'):
+                    filter_type = None
+
+            message = "📈 <b>Recent Trades</b>\n"
+            if filter_type:
+                message += f"({filter_type.upper()})\n"
+            message += "\n"
 
             if not self.database:
                 message += "<i>Database not configured</i>"
@@ -457,22 +473,22 @@ class TradingBotTelegram:
                 return
 
             async with self.database.session_factory() as session:
-                # Get last 10 closed trades
+                # Get closed trades
                 stmt = (
                     select(Trade)
                     .where(Trade.exit_order_id != None)
                     .order_by(Trade.entry_timestamp.desc())
-                    .limit(10)
+                    .limit(20)
                 )
                 result = await session.execute(stmt)
                 closed_trades = result.scalars().all()
 
-                # Get open trades (for context)
+                # Get open trades
                 stmt_open = (
                     select(Trade)
                     .where(Trade.exit_order_id == None)
                     .order_by(Trade.entry_timestamp.desc())
-                    .limit(10)
+                    .limit(20)
                 )
                 result_open = await session.execute(stmt_open)
                 open_trades = result_open.scalars().all()
@@ -480,8 +496,9 @@ class TradingBotTelegram:
             if not closed_trades and not open_trades:
                 message += "<i>No trades yet</i>"
             else:
-                if closed_trades:
-                    message += f"<b>Last {len(closed_trades)} Closed Trades:</b>\n\n"
+                # Show closed trades (if not filtered to open only)
+                if filter_type != 'open' and closed_trades:
+                    message += f"<b>✅ Closed Trades ({len(closed_trades)}):</b>\n\n"
                     for trade in closed_trades:
                         pnl_emoji = "✅" if trade.is_winning_trade else "❌"
                         pnl_str = f"${float(trade.gross_pnl):,.2f}" if trade.gross_pnl else "N/A"
@@ -494,11 +511,12 @@ class TradingBotTelegram:
                             f"  P&L: {pnl_str}{pnl_pct}\n"
                             f"  Strategy: {trade.strategy}\n\n"
                         )
-                else:
+                elif filter_type != 'open' and not closed_trades:
                     message += "<i>No closed trades yet</i>\n\n"
 
-                if open_trades:
-                    message += f"<b>Open Trades ({len(open_trades)}):</b>\n\n"
+                # Show open trades (if not filtered to closed only)
+                if filter_type != 'closed' and open_trades:
+                    message += f"<b>📈 Open Trades ({len(open_trades)}):</b>\n\n"
                     for trade in open_trades:
                         message += (
                             f"📈 <b>{trade.symbol}</b>\n"
@@ -506,6 +524,8 @@ class TradingBotTelegram:
                             f"  Strategy: {trade.strategy}\n"
                             f"  Awaiting exit...\n\n"
                         )
+                elif filter_type != 'closed' and not open_trades and not closed_trades:
+                    message += "<i>No open trades</i>\n"
 
             await update.message.reply_html(message)
 
@@ -661,7 +681,8 @@ Current positions will remain open.
 
 <b>📊 Status & Portfolio:</b>
 <b>/status</b> - Account balance, equity, buying power & open positions
-<b>/trades</b> - Recent trades (open & closed with P&L)
+<b>/trades [open|closed]</b> - Recent trades (open & closed with P&L)
+  Examples: <code>/trades</code> <code>/trades open</code> <code>/trades closed</code>
 <b>/metrics</b> - Performance stats (win rate, profit factor, P&L breakdown)
 <b>/uptime</b> - Bot process uptime
 
