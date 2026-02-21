@@ -6,7 +6,7 @@ strategies:
     symbols:
       - "SPY"
     parameters:
-      quantity: 10
+      quantity: 4
 
   # Mean reversion strategy using Bollinger Bands
   - name: "mean_reversion_spy"
@@ -17,7 +17,7 @@ strategies:
     parameters:
       window: 20
       num_std: 2
-      position_size: 10
+      position_size: 4
 
   # Momentum strategy
   - name: "momentum_qqq"
@@ -28,7 +28,7 @@ strategies:
     parameters:
       lookback_period: 14
       momentum_threshold: 0.02
-      position_size: 5
+      position_size: 2
 
   # RSI + ATR + EMA Trend Following Strategy (Generic - works on any asset)
   # Asset-agnostic strategy that can be used for:
@@ -60,7 +60,7 @@ strategies:
       ema_slow_period: 21
 
       # Risk Management
-      position_size: 10  # Share quantity (adjust per asset)
+      position_size: 4  # Share quantity (adjust per asset)
       risk_reward_ratio: 2.0  # Risk 1 to win 2
       max_daily_loss_pips: 100
 

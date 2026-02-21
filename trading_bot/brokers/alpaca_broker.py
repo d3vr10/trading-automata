@@ -353,12 +353,13 @@ class AlpacaBroker(IBroker):
             # Map status names to Alpaca OrderStatus enum if provided
             if status:
                 status_enum = OrderStatus(status.upper())
-                orders = self.client.get_orders(status=status_enum, limit=limit)
+                orders = self.client.get_orders(status=status_enum)
             else:
-                orders = self.client.get_orders(limit=limit)
+                orders = self.client.get_orders()
 
             result = []
-            for order in orders:
+            # Limit results to the requested amount
+            for order in orders[:limit]:
                 result.append({
                     'id': str(order.id),
                     'symbol': order.symbol,

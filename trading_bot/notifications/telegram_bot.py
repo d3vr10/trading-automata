@@ -451,24 +451,47 @@ class TradingBotTelegram:
                     .limit(10)
                 )
                 result = await session.execute(stmt)
-                trades = result.scalars().all()
+                closed_trades = result.scalars().all()
 
-            if not trades:
-                message += "<i>No closed trades yet</i>"
+                # Get open trades (for context)
+                stmt_open = (
+                    select(Trade)
+                    .where(Trade.exit_order_id == None)
+                    .order_by(Trade.entry_timestamp.desc())
+                    .limit(10)
+                )
+                result_open = await session.execute(stmt_open)
+                open_trades = result_open.scalars().all()
+
+            if not closed_trades and not open_trades:
+                message += "<i>No trades yet</i>"
             else:
-                message += f"<b>Last {len(trades)} Closed Trades:</b>\n\n"
-                for trade in trades:
-                    pnl_emoji = "✅" if trade.is_winning_trade else "❌"
-                    pnl_str = f"${float(trade.gross_pnl):,.2f}" if trade.gross_pnl else "N/A"
-                    pnl_pct = f" ({float(trade.pnl_percent):.1f}%)" if trade.pnl_percent else ""
+                if closed_trades:
+                    message += f"<b>Last {len(closed_trades)} Closed Trades:</b>\n\n"
+                    for trade in closed_trades:
+                        pnl_emoji = "✅" if trade.is_winning_trade else "❌"
+                        pnl_str = f"${float(trade.gross_pnl):,.2f}" if trade.gross_pnl else "N/A"
+                        pnl_pct = f" ({float(trade.pnl_percent):.1f}%)" if trade.pnl_percent else ""
 
-                    message += (
-                        f"{pnl_emoji} <b>{trade.symbol}</b>\n"
-                        f"  Entry: ${float(trade.entry_price):.4f} × {float(trade.entry_quantity)}\n"
-                        f"  Exit: ${float(trade.exit_price):.4f} × {float(trade.exit_quantity)}\n"
-                        f"  P&L: {pnl_str}{pnl_pct}\n"
-                        f"  Strategy: {trade.strategy}\n\n"
-                    )
+                        message += (
+                            f"{pnl_emoji} <b>{trade.symbol}</b>\n"
+                            f"  Entry: ${float(trade.entry_price):.4f} × {float(trade.entry_quantity)}\n"
+                            f"  Exit: ${float(trade.exit_price):.4f} × {float(trade.exit_quantity)}\n"
+                            f"  P&L: {pnl_str}{pnl_pct}\n"
+                            f"  Strategy: {trade.strategy}\n\n"
+                        )
+                else:
+                    message += "<i>No closed trades yet</i>\n\n"
+
+                if open_trades:
+                    message += f"<b>Open Trades ({len(open_trades)}):</b>\n\n"
+                    for trade in open_trades:
+                        message += (
+                            f"📈 <b>{trade.symbol}</b>\n"
+                            f"  Entry: ${float(trade.entry_price):.4f} × {float(trade.entry_quantity)}\n"
+                            f"  Strategy: {trade.strategy}\n"
+                            f"  Awaiting exit...\n\n"
+                        )
 
             await update.message.reply_html(message)
 
