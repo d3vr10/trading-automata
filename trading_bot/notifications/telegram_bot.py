@@ -161,6 +161,12 @@ class TradingBotTelegram:
                 CommandHandler("cancel_orders", self._cmd_cancel_orders)
             )
             self.application.add_handler(
+                CommandHandler("strategies", self._cmd_strategies)
+            )
+            self.application.add_handler(
+                CallbackQueryHandler(self._handle_trades_callback, pattern="^trades_")
+            )
+            self.application.add_handler(
                 CallbackQueryHandler(self._handle_confirmation)
             )
 
@@ -180,6 +186,7 @@ class TradingBotTelegram:
             BotCommand("status", "Show bot status and portfolio"),
             BotCommand("trades", "Show recent trades"),
             BotCommand("metrics", "Show performance metrics"),
+            BotCommand("strategies", "List available strategies"),
             BotCommand("version", "Show bot version"),
             BotCommand("uptime", "Show bot uptime"),
             BotCommand("pause", "Pause trading"),
@@ -550,7 +557,43 @@ class TradingBotTelegram:
                 elif status_filter != 'closed' and not open_trades and (not strategy_filter or status_filter):
                     message += "<i>No open trades found</i>\n"
 
-            await update.message.reply_html(message)
+            # Build inline keyboard for quick filtering
+            keyboard = []
+
+            # Status filter row
+            status_buttons = [
+                InlineKeyboardButton("📈 Open", callback_data="trades_open"),
+                InlineKeyboardButton("✅ Closed", callback_data="trades_closed"),
+                InlineKeyboardButton("📊 All", callback_data="trades_all"),
+            ]
+            keyboard.append(status_buttons)
+
+            # Strategy filter row (from config)
+            try:
+                import yaml
+                from pathlib import Path
+                config_path = Path('config/strategies.yaml')
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = yaml.safe_load(f)
+                    strategies = config.get('strategies', [])
+                    strategy_buttons = []
+                    for strat in strategies[:4]:  # Limit to 4 strategies per row
+                        name = strat.get('name', '')
+                        enabled = strat.get('enabled', True)
+                        if enabled and name:
+                            # Truncate long names for button display
+                            short_name = name.split('_')[0].upper()
+                            strategy_buttons.append(
+                                InlineKeyboardButton(short_name, callback_data=f"trades_strat_{name}")
+                            )
+                    if strategy_buttons:
+                        keyboard.append(strategy_buttons)
+            except Exception:
+                pass  # If config loading fails, just skip strategy buttons
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_html(message, reply_markup=reply_markup)
 
         except Exception as e:
             logger.error(f"Error in /trades command: {e}")
@@ -704,9 +747,10 @@ Current positions will remain open.
 
 <b>📊 Status & Portfolio:</b>
 <b>/status</b> - Account balance, equity, buying power & open positions
-<b>/trades [STRATEGY] [open|closed]</b> - Recent trades with filters
+<b>/trades [STRATEGY] [open|closed]</b> - Recent trades with quick filter buttons
   Examples: <code>/trades</code> <code>/trades open</code> <code>/trades rsi_atr_trend</code> <code>/trades momentum closed</code>
 <b>/metrics</b> - Performance stats (win rate, profit factor, P&L breakdown)
+<b>/strategies</b> - List all available strategies & status
 <b>/uptime</b> - Bot process uptime
 
 <b>🎮 Trading Control:</b>
@@ -750,6 +794,47 @@ Current positions will remain open.
 <b>Timestamp:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
 """
         await update.message.reply_html(message)
+
+    async def _cmd_strategies(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /strategies command - list available strategies."""
+        if not await self._check_authorized(update):
+            return
+
+        try:
+            import yaml
+            from pathlib import Path
+
+            # Load strategies from config
+            config_path = Path('config/strategies.yaml')
+            if not config_path.exists():
+                await update.message.reply_text("❌ Strategies config file not found")
+                return
+
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+
+            strategies = config.get('strategies', [])
+            if not strategies:
+                await update.message.reply_text("❌ No strategies configured")
+                return
+
+            message = "📊 <b>Available Strategies</b>\n\n"
+            for strat in strategies:
+                name = strat.get('name', 'unknown')
+                enabled = strat.get('enabled', True)
+                class_name = strat.get('class', 'N/A')
+                symbols = ', '.join(strat.get('symbols', []))
+
+                status_emoji = "✅" if enabled else "❌"
+                message += f"{status_emoji} <b>{name}</b>\n"
+                message += f"  Class: {class_name}\n"
+                message += f"  Symbols: {symbols}\n\n"
+
+            await update.message.reply_html(message)
+
+        except Exception as e:
+            logger.error(f"Error in /strategies command: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
 
     async def _cmd_uptime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /uptime command."""
@@ -1110,6 +1195,37 @@ No bot session found - bot may not have started yet.
         except Exception as e:
             logger.error(f"Error in /cancel_orders: {e}")
             await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _handle_trades_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /trades button callbacks for quick filtering."""
+        query = update.callback_query
+        await query.answer()
+
+        if not await self._check_authorized(update):
+            return
+
+        try:
+            callback_data = query.data
+
+            # Parse callback to determine filter
+            if callback_data == "trades_open":
+                context.args = ["open"]
+            elif callback_data == "trades_closed":
+                context.args = ["closed"]
+            elif callback_data == "trades_all":
+                context.args = []
+            elif callback_data.startswith("trades_strat_"):
+                strategy_name = callback_data.replace("trades_strat_", "")
+                context.args = [strategy_name]
+            else:
+                return
+
+            # Re-execute the trades command with the new filter
+            await self._cmd_trades(update, context)
+
+        except Exception as e:
+            logger.error(f"Error in trades callback: {e}")
+            await query.edit_message_text(f"❌ Error: {str(e)}")
 
     async def _handle_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle confirmation callbacks from inline keyboards."""
