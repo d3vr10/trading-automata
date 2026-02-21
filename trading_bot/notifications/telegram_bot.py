@@ -956,18 +956,24 @@ No bot session found - bot may not have started yet.
                     else:
                         symbol_filter = arg.upper()
 
-            orders = self.broker.get_orders(status=status_filter)
-            orders = orders[:50]  # Limit to 50 results in Python
+            all_orders = self.broker.get_orders(status=status_filter)
+            all_orders = all_orders[:50]  # Fetch up to 50 from broker
 
             if symbol_filter:
-                orders = [o for o in orders if o.get('symbol', '').upper().startswith(symbol_filter)]
+                all_orders = [o for o in all_orders if o.get('symbol', '').upper().startswith(symbol_filter)]
 
-            if not orders:
+            if not all_orders:
                 message = "📋 <b>Open Orders</b>\n\n<i>No open orders</i>"
                 await update.message.reply_html(message)
                 return
 
-            message = f"📋 <b>Open Orders ({len(orders)})</b>\n\n"
+            # Show only first 10 to avoid message length limit (Telegram: 4096 chars max)
+            orders = all_orders[:10]
+            total_orders = len(all_orders)
+
+            message = f"📋 <b>Open Orders</b>\n"
+            message += f"(Showing {len(orders)} of {total_orders})\n\n"
+
             for i, order in enumerate(orders, 1):
                 order_id = str(order.get('id', 'N/A'))[:8]
                 symbol = order.get('symbol', 'N/A')
@@ -980,10 +986,13 @@ No bot session found - bot may not have started yet.
                     created_at = created_at.split('T')[1][:5]
 
                 message += f"{i}. {side_emoji} <b>{symbol}</b> {side}\n"
-                message += f"   ID: <code>{order_id}...</code>\n"
+                message += f"   ID: <code>{order_id}</code>\n"
                 message += f"   Qty: {qty}\n"
                 message += f"   Status: {status}\n"
                 message += f"   Created: {created_at}\n\n"
+
+            if total_orders > 10:
+                message += f"<i>... and {total_orders - 10} more orders (use filters to narrow down)</i>"
 
             await update.message.reply_html(message)
 
