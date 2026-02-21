@@ -382,6 +382,20 @@ class TradingBotTelegram:
 
             message = "📊 <b>Trading Bot Status</b>\n\n"
 
+            # Get broker account info
+            if self.broker:
+                try:
+                    account = self.broker.get_account()
+                    message += f"💰 <b>Account</b>\n"
+                    message += f"  Portfolio Value: ${float(account.get('portfolio_value', 0)):,.2f}\n"
+                    message += f"  Buying Power: ${float(account.get('buying_power', 0)):,.2f}\n"
+                    message += f"  Cash: ${float(account.get('cash', 0)):,.2f}\n"
+                    if account.get('equity'):
+                        message += f"  Equity: ${float(account['equity']):,.2f}\n"
+                    message += "\n"
+                except Exception as e:
+                    logger.warning(f"Failed to get account info: {e}")
+
             # Get open positions
             if self.database:
                 async with self.database.session_factory() as session:
@@ -530,29 +544,42 @@ class TradingBotTelegram:
                 result = await session.execute(stmt)
                 open_trades = result.scalars().all()
 
-            if not all_trades:
+            if not all_trades and not open_trades:
                 message += "<i>No trades yet</i>"
                 await update.message.reply_html(message)
                 return
 
-            # Calculate metrics
-            total_trades = len(all_trades)
-            winning_trades = sum(1 for t in all_trades if t.is_winning_trade)
-            losing_trades = total_trades - winning_trades
-            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            # Calculate metrics for closed trades
+            if all_trades:
+                total_trades = len(all_trades)
+                winning_trades = sum(1 for t in all_trades if t.is_winning_trade)
+                losing_trades = total_trades - winning_trades
+                win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
 
-            gross_profit = sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) > 0)
-            gross_loss = abs(sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) < 0))
-            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
-            total_pnl = gross_profit - gross_loss
+                gross_profit = sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) > 0)
+                gross_loss = abs(sum(float(t.gross_pnl or 0) for t in all_trades if t.gross_pnl and float(t.gross_pnl) < 0))
+                profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+                total_pnl = gross_profit - gross_loss
 
-            message += f"<b>Total Trades:</b> {total_trades} ✅ {winning_trades} ❌ {losing_trades}\n"
-            message += f"<b>Win Rate:</b> {win_rate:.1f}%\n"
-            message += f"<b>Gross Profit:</b> ${gross_profit:,.2f}\n"
-            message += f"<b>Gross Loss:</b> -${gross_loss:,.2f}\n"
-            message += f"<b>Total P&L:</b> ${total_pnl:,.2f}\n"
-            message += f"<b>Profit Factor:</b> {profit_factor:.2f}\n"
-            message += f"<b>Open Positions:</b> {len(open_trades)}\n"
+                message += f"<b>✅ Closed Trades</b>\n"
+                message += f"  Total: {total_trades} (✅ {winning_trades} / ❌ {losing_trades})\n"
+                message += f"  Win Rate: {win_rate:.1f}%\n"
+                message += f"  Gross Profit: ${gross_profit:,.2f}\n"
+                message += f"  Gross Loss: -${gross_loss:,.2f}\n"
+                message += f"  Net P&L: ${total_pnl:,.2f}\n"
+                message += f"  Profit Factor: {profit_factor:.2f}\n\n"
+
+            # Show open trades info
+            if open_trades:
+                message += f"<b>📈 Open Trades ({len(open_trades)})</b>\n"
+                total_entry_cost = sum(float(t.entry_price * t.entry_quantity or 0) for t in open_trades)
+                message += f"  Total Entry Cost: ${total_entry_cost:,.2f}\n"
+                for trade in open_trades[:5]:  # Show first 5
+                    message += f"  • {trade.symbol}: {float(trade.entry_quantity)} @ ${float(trade.entry_price):.2f}\n"
+                if len(open_trades) > 5:
+                    message += f"  ... and {len(open_trades) - 5} more\n"
+            else:
+                message += f"<b>No Open Positions</b>\n"
 
             # Per-strategy breakdown
             strategies = {}
@@ -632,25 +659,26 @@ Current positions will remain open.
 
         message = """❓ <b>Available Commands</b>
 
-<b>Status & Analytics:</b>
-<b>/status</b> - Show bot status and portfolio
-<b>/trades</b> - Show recent trades (last 10)
-<b>/metrics</b> - Show performance metrics
-<b>/version</b> - Show bot version
-<b>/uptime</b> - Show bot uptime
+<b>📊 Status & Portfolio:</b>
+<b>/status</b> - Account balance, equity, buying power & open positions
+<b>/trades</b> - Recent trades (open & closed with P&L)
+<b>/metrics</b> - Performance stats (win rate, profit factor, P&L breakdown)
+<b>/uptime</b> - Bot process uptime
 
-<b>Trading Control:</b>
-<b>/pause</b> - Pause trading
-<b>/resume</b> - Resume trading
+<b>🎮 Trading Control:</b>
+<b>/pause</b> - Pause signal execution
+<b>/resume</b> - Resume signal execution
 
-<b>Broker Management:</b>
-<b>/broker_positions</b> - List open positions from broker
-<b>/broker_orders</b> - List open orders from broker
-<b>/close_position SYMBOL</b> - Close a position (e.g. /close_position SPY)
-<b>/close_all_positions</b> - Close all open positions
-<b>/cancel_order ID</b> - Cancel an order by ID
-<b>/cancel_orders [SYMBOL]</b> - Cancel all orders (optionally for a symbol)
+<b>💼 Broker Management:</b>
+<b>/broker_positions</b> - Broker's open positions (real-time)
+<b>/broker_orders</b> - Broker's open orders (real-time)
+<b>/close_position SYMBOL</b> - Close position (e.g. /close_position SPY)
+<b>/close_all_positions</b> - Close all positions
+<b>/cancel_order ID</b> - Cancel a specific order
+<b>/cancel_orders [SYMBOL]</b> - Cancel all orders [for a symbol]
 
+<b>ℹ️ Info:</b>
+<b>/version</b> - Bot version & timestamp
 <b>/help</b> - Show this help message
 """
         await update.message.reply_html(message)
