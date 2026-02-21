@@ -490,7 +490,10 @@ class TradingBotTelegram:
 
             if not self.database:
                 message += "<i>Database not configured</i>"
-                await update.message.reply_html(message)
+                if update.callback_query:
+                    await update.callback_query.edit_message_text(message, parse_mode='HTML')
+                else:
+                    await update.message.reply_html(message)
                 return
 
             async with self.database.session_factory() as session:
@@ -593,11 +596,25 @@ class TradingBotTelegram:
                 pass  # If config loading fails, just skip strategy buttons
 
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_html(message, reply_markup=reply_markup)
+
+            # Handle both regular messages and callback queries
+            if update.callback_query:
+                # Called from button callback - edit existing message
+                await update.callback_query.edit_message_text(
+                    message,
+                    parse_mode='HTML',
+                    reply_markup=reply_markup
+                )
+            else:
+                # Called as regular command - send new message
+                await update.message.reply_html(message, reply_markup=reply_markup)
 
         except Exception as e:
             logger.error(f"Error in /trades command: {e}")
-            await update.message.reply_text(f"❌ Error retrieving trades: {str(e)}")
+            if update.callback_query:
+                await update.callback_query.edit_message_text(f"❌ Error retrieving trades: {str(e)}")
+            else:
+                await update.message.reply_text(f"❌ Error retrieving trades: {str(e)}")
 
     async def _cmd_metrics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /metrics command."""
