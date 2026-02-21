@@ -848,7 +848,8 @@ No bot session found - bot may not have started yet.
                     else:
                         symbol_filter = arg.upper()
 
-            orders = self.broker.get_orders(status=status_filter, limit=50)
+            orders = self.broker.get_orders(status=status_filter)
+            orders = orders[:50]  # Limit to 50 results in Python
 
             if symbol_filter:
                 orders = [o for o in orders if o.get('symbol', '').upper().startswith(symbol_filter)]
