@@ -9,9 +9,10 @@ strategies:
       quantity: 4
 
   # Mean reversion strategy using Bollinger Bands
+  # DISABLED: Doesn't work in downtrends - only generates BUY, never SELL
   - name: "mean_reversion_spy"
     class: "MeanReversionStrategy"
-    enabled: true
+    enabled: false
     symbols:
       - "SPY"
     parameters:
