@@ -437,12 +437,15 @@ class TradingBotTelegram:
             await update.message.reply_text(f"❌ Error retrieving status: {str(e)}")
 
     async def _cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /trades command with optional filter.
+        """Handle /trades command with optional filters.
 
         Usage:
-            /trades          - Show both open and closed trades
-            /trades open     - Show only open trades
-            /trades closed   - Show only closed trades
+            /trades                    - Show all trades (open and closed)
+            /trades open               - Show only open trades
+            /trades closed             - Show only closed trades
+            /trades rsi_atr_trend      - Show trades for specific strategy
+            /trades rsi_atr_trend open - Show open trades for specific strategy
+            /trades momentum closed    - Show closed trades for momentum strategy
         """
         if not await self._check_authorized(update):
             return
@@ -455,16 +458,27 @@ class TradingBotTelegram:
                     max_overflow=self.max_overflow,
                 )
 
-            # Parse filter from args
-            filter_type = None
-            if context.args and len(context.args) > 0:
-                filter_type = context.args[0].lower()
-                if filter_type not in ('open', 'closed'):
-                    filter_type = None
+            # Parse filters from args
+            status_filter = None
+            strategy_filter = None
+
+            if context.args:
+                for arg in context.args:
+                    arg_lower = arg.lower()
+                    if arg_lower in ('open', 'closed'):
+                        status_filter = arg_lower
+                    else:
+                        # Assume it's a strategy name
+                        strategy_filter = arg_lower
 
             message = "📈 <b>Recent Trades</b>\n"
-            if filter_type:
-                message += f"({filter_type.upper()})\n"
+            if strategy_filter or status_filter:
+                filters = []
+                if strategy_filter:
+                    filters.append(f"Strategy: {strategy_filter}")
+                if status_filter:
+                    filters.append(f"Status: {status_filter.upper()}")
+                message += f"({', '.join(filters)})\n"
             message += "\n"
 
             if not self.database:
@@ -473,10 +487,19 @@ class TradingBotTelegram:
                 return
 
             async with self.database.session_factory() as session:
+                # Build WHERE clauses for filters
+                closed_where = [Trade.exit_order_id != None]
+                open_where = [Trade.exit_order_id == None]
+
+                if strategy_filter:
+                    closed_where.append(Trade.strategy.ilike(f"%{strategy_filter}%"))
+                    open_where.append(Trade.strategy.ilike(f"%{strategy_filter}%"))
+
                 # Get closed trades
+                from sqlalchemy import and_
                 stmt = (
                     select(Trade)
-                    .where(Trade.exit_order_id != None)
+                    .where(and_(*closed_where))
                     .order_by(Trade.entry_timestamp.desc())
                     .limit(20)
                 )
@@ -486,7 +509,7 @@ class TradingBotTelegram:
                 # Get open trades
                 stmt_open = (
                     select(Trade)
-                    .where(Trade.exit_order_id == None)
+                    .where(and_(*open_where))
                     .order_by(Trade.entry_timestamp.desc())
                     .limit(20)
                 )
@@ -494,10 +517,10 @@ class TradingBotTelegram:
                 open_trades = result_open.scalars().all()
 
             if not closed_trades and not open_trades:
-                message += "<i>No trades yet</i>"
+                message += "<i>No trades found</i>"
             else:
                 # Show closed trades (if not filtered to open only)
-                if filter_type != 'open' and closed_trades:
+                if status_filter != 'open' and closed_trades:
                     message += f"<b>✅ Closed Trades ({len(closed_trades)}):</b>\n\n"
                     for trade in closed_trades:
                         pnl_emoji = "✅" if trade.is_winning_trade else "❌"
@@ -511,11 +534,11 @@ class TradingBotTelegram:
                             f"  P&L: {pnl_str}{pnl_pct}\n"
                             f"  Strategy: {trade.strategy}\n\n"
                         )
-                elif filter_type != 'open' and not closed_trades:
-                    message += "<i>No closed trades yet</i>\n\n"
+                elif status_filter != 'open' and not closed_trades and (not strategy_filter or status_filter):
+                    message += "<i>No closed trades found</i>\n\n"
 
                 # Show open trades (if not filtered to closed only)
-                if filter_type != 'closed' and open_trades:
+                if status_filter != 'closed' and open_trades:
                     message += f"<b>📈 Open Trades ({len(open_trades)}):</b>\n\n"
                     for trade in open_trades:
                         message += (
@@ -524,8 +547,8 @@ class TradingBotTelegram:
                             f"  Strategy: {trade.strategy}\n"
                             f"  Awaiting exit...\n\n"
                         )
-                elif filter_type != 'closed' and not open_trades and not closed_trades:
-                    message += "<i>No open trades</i>\n"
+                elif status_filter != 'closed' and not open_trades and (not strategy_filter or status_filter):
+                    message += "<i>No open trades found</i>\n"
 
             await update.message.reply_html(message)
 
@@ -681,8 +704,8 @@ Current positions will remain open.
 
 <b>📊 Status & Portfolio:</b>
 <b>/status</b> - Account balance, equity, buying power & open positions
-<b>/trades [open|closed]</b> - Recent trades (open & closed with P&L)
-  Examples: <code>/trades</code> <code>/trades open</code> <code>/trades closed</code>
+<b>/trades [STRATEGY] [open|closed]</b> - Recent trades with filters
+  Examples: <code>/trades</code> <code>/trades open</code> <code>/trades rsi_atr_trend</code> <code>/trades momentum closed</code>
 <b>/metrics</b> - Performance stats (win rate, profit factor, P&L breakdown)
 <b>/uptime</b> - Bot process uptime
 
