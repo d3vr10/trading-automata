@@ -1,8 +1,9 @@
 strategies:
   # Buy and hold strategy - simple example
+  # DISABLED: Never exits positions - not compatible with trade tracking
   - name: "buy_hold_spy"
     class: "BuyAndHoldStrategy"
-    enabled: true
+    enabled: false
     symbols:
       - "SPY"
     parameters:
