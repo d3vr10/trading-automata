@@ -586,7 +586,8 @@ class TradingBot:
         """
         try:
             # Find open trades for this symbol/strategy to match with exit
-            open_trades = await self.trade_repo.get_trades_by_symbol(signal.symbol)
+            # Look back 30 days to include older trades
+            open_trades = await self.trade_repo.get_trades_by_symbol(signal.symbol, days=30)
 
             # Filter for open trades (no exit yet) from the same strategy
             open_trades_from_strategy = [
@@ -597,7 +598,9 @@ class TradingBot:
             if not open_trades_from_strategy:
                 logger.warning(
                     f"No open trades found for {signal.symbol} "
-                    f"from strategy {strategy.name} to record exit"
+                    f"from strategy {strategy.name} to record exit. "
+                    f"Available trades: {len(open_trades)}, "
+                    f"Signal qty: {signal.quantity}"
                 )
                 return
 
