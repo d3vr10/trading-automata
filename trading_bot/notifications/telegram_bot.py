@@ -208,6 +208,9 @@ class TradingBotTelegram:
             BotCommand("uptime", "Show bot uptime"),
             BotCommand("pause", "Pause trading"),
             BotCommand("resume", "Resume trading"),
+            BotCommand("bots", "List all bot instances (multi-bot)"),
+            BotCommand("pause_bot", "Pause specific bot (multi-bot)"),
+            BotCommand("resume_bot", "Resume specific bot (multi-bot)"),
             BotCommand("broker_positions", "List open positions from broker"),
             BotCommand("broker_orders", "List open orders from broker"),
             BotCommand("close_position", "Close a position by symbol"),
@@ -804,7 +807,7 @@ Current positions will remain open.
 <b>📊 Status & Portfolio:</b>
 <b>/status</b> - Account balance, equity, buying power & open positions
 <b>/trades [STRATEGY] [open|closed]</b> - Recent trades with quick filter buttons
-  Examples: <code>/trades</code> <code>/trades open</code> <code>/trades rsi_atr_trend</code> <code>/trades momentum closed</code>
+  Examples: <code>/trades</code> <code>/trades open</code> <code>/trades rsi_atr_trend</code>
 <b>/metrics</b> - Performance stats (win rate, profit factor, P&L breakdown)
 <b>/strategies</b> - List all available strategies & status
 <b>/uptime</b> - Bot process uptime
@@ -812,6 +815,11 @@ Current positions will remain open.
 <b>🎮 Trading Control:</b>
 <b>/pause</b> - Pause signal execution
 <b>/resume</b> - Resume signal execution
+
+<b>🤖 Multi-Bot Management:</b>
+<b>/bots</b> - List all bot instances with status & allocation
+<b>/pause_bot BOT_NAME</b> - Pause specific bot
+<b>/resume_bot BOT_NAME</b> - Resume specific bot
 
 <b>💼 Broker Management:</b>
 <b>/broker_positions</b> - Broker's open positions (real-time)
@@ -1333,7 +1341,7 @@ No bot session found - bot may not have started yet.
 
         try:
             # Get all open positions for this strategy from database
-            async with self.database.get_session() as session:
+            async with self.database.session_factory() as session:
                 positions_query = select(Position).where(
                     and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                 )
@@ -1444,7 +1452,7 @@ No bot session found - bot may not have started yet.
 
         try:
             # Get all open positions for this strategy from database
-            async with self.database.get_session() as session:
+            async with self.database.session_factory() as session:
                 positions_query = select(Position).where(
                     and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                 )
@@ -1648,7 +1656,7 @@ No bot session found - bot may not have started yet.
 
                 # Rebuild the UI with updated selection
                 try:
-                    async with self.database.get_session() as session:
+                    async with self.database.session_factory() as session:
                         positions_query = select(Position).where(
                             and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                         )
@@ -1671,7 +1679,7 @@ No bot session found - bot may not have started yet.
 
                 # Get positions and close selected ones
                 try:
-                    async with self.database.get_session() as session:
+                    async with self.database.session_factory() as session:
                         positions_query = select(Position).where(
                             and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                         )
@@ -1716,7 +1724,7 @@ No bot session found - bot may not have started yet.
 
                 # Rebuild the UI with updated selection
                 try:
-                    async with self.database.get_session() as session:
+                    async with self.database.session_factory() as session:
                         positions_query = select(Position).where(
                             and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                         )
@@ -1740,7 +1748,7 @@ No bot session found - bot may not have started yet.
 
                 # Get orders and cancel selected ones
                 try:
-                    async with self.database.get_session() as session:
+                    async with self.database.session_factory() as session:
                         positions_query = select(Position).where(
                             and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
                         )
@@ -1851,7 +1859,7 @@ No bot session found - bot may not have started yet.
 
         Usage: /bots
         """
-        if not self._check_auth(update):
+        if not await self._check_authorized(update):
             return
 
         if not self.bot_registry:
@@ -1876,7 +1884,7 @@ No bot session found - bot may not have started yet.
 
         Usage: /pause_bot <bot_name>
         """
-        if not self._check_auth(update):
+        if not await self._check_authorized(update):
             return
 
         if not context.args:
@@ -1897,7 +1905,7 @@ No bot session found - bot may not have started yet.
 
         Usage: /resume_bot <bot_name>
         """
-        if not self._check_auth(update):
+        if not await self._check_authorized(update):
             return
 
         if not context.args:

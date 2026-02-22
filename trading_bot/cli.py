@@ -130,13 +130,14 @@ def watch_command(async_fn: Callable, watch: bool, interval: int = 2):
         watch: Whether to enable watch mode
         interval: Refresh interval in seconds (default 2)
     """
+    import os
     if not watch:
         asyncio.run(async_fn())
     else:
         try:
             while True:
-                # Clear screen
-                click.clear()
+                # Clear screen (cross-platform)
+                os.system('cls' if os.name == 'nt' else 'clear')
                 asyncio.run(async_fn())
                 click.echo(colored(f"\n(Watching... press Ctrl+C to stop, refreshing every {interval}s)", Colors.CYAN))
                 time.sleep(interval)
