@@ -1,5 +1,6 @@
 """Chart generation utilities for trading bot metrics visualization."""
 
+import asyncio
 import io
 import logging
 from datetime import datetime
@@ -106,8 +107,31 @@ class ChartGenerator:
             legend=dict(x=0.02, y=0.98),
         )
 
-        # Render to PNG bytes
-        png_bytes = fig.to_image(format="png", width=cls.WIDTH, height=cls.HEIGHT)
+        # Render to PNG bytes with timeout
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
+            png_bytes = loop.run_until_complete(
+                asyncio.wait_for(
+                    asyncio.to_thread(
+                        fig.to_image,
+                        format="png",
+                        width=cls.WIDTH,
+                        height=cls.HEIGHT
+                    ),
+                    timeout=15.0  # 15 second timeout for P&L chart
+                )
+            )
+        except asyncio.TimeoutError:
+            logger.warning("P&L chart rendering timed out (15s), returning None")
+            return None, {}
+        except Exception as e:
+            logger.error(f"P&L chart rendering failed: {e}")
+            return None, {}
 
         # Calculate metrics
         metrics = {
@@ -310,8 +334,31 @@ class ChartGenerator:
         fig.update_xaxes(showgrid=False, zeroline=False, showline=False, showticklabels=False, row=1, col=2)
         fig.update_yaxes(showgrid=False, zeroline=False, showline=False, showticklabels=False, row=1, col=2)
 
-        # Render to PNG bytes
-        png_bytes = fig.to_image(format="png", width=1400, height=900)
+        # Render to PNG bytes with timeout
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
+            png_bytes = loop.run_until_complete(
+                asyncio.wait_for(
+                    asyncio.to_thread(
+                        fig.to_image,
+                        format="png",
+                        width=1400,
+                        height=900
+                    ),
+                    timeout=20.0  # 20 second timeout for complex performance chart
+                )
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Performance chart rendering timed out (20s), returning None")
+            return None
+        except Exception as e:
+            logger.error(f"Performance chart rendering failed: {e}")
+            return None
 
         return png_bytes
 
