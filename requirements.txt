@@ -22,7 +22,8 @@ yfinance>=0.2.0
 pandas-ta>=0.3.14
 
 # Charting
-matplotlib>=3.7.0
+plotly>=5.0.0             # Interactive visualization library
+kaleido>=0.2.0            # Static image export for Plotly
 
 # Async support
 aiohttp>=3.9.0
