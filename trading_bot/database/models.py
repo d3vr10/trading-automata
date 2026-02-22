@@ -28,6 +28,7 @@ class Trade(Base):
     symbol = Column(String(20), nullable=False, index=True)
     strategy = Column(String(100), nullable=False, index=True)
     broker = Column(String(50), nullable=False)
+    bot_name = Column(String(100), nullable=True, index=True)
 
     # Entry details
     entry_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), index=True)
@@ -79,6 +80,7 @@ class Position(Base):
     symbol = Column(String(20), nullable=False, index=True)
     strategy = Column(String(100), nullable=False)
     broker = Column(String(50), nullable=False)
+    bot_name = Column(String(100), nullable=True, index=True)
 
     # Position details
     quantity = Column(Numeric(20, 8), nullable=False)
@@ -157,6 +159,7 @@ class TradingEvent(Base):
     strategy = Column(String(100), nullable=True)
     symbol = Column(String(20), nullable=True)
     broker = Column(String(50), nullable=True)
+    bot_name = Column(String(100), nullable=True, index=True)
 
     # Details
     message = Column(Text, nullable=False)
@@ -211,6 +214,7 @@ class BotSession(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(Numeric, nullable=False, unique=True)
     started_at = Column(DateTime, nullable=False)
+    bot_name = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
@@ -226,6 +230,7 @@ class HealthCheck(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     broker = Column(String(50), nullable=False, index=True)
     strategy = Column(String(100), nullable=True)
+    bot_name = Column(String(100), nullable=True, index=True)
     is_healthy = Column(Boolean, nullable=False)
     last_bar_timestamp = Column(DateTime, nullable=True)
     last_order_timestamp = Column(DateTime, nullable=True)
