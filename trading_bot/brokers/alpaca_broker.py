@@ -350,16 +350,29 @@ class AlpacaBroker(IBroker):
             raise RuntimeError("Not connected to broker")
 
         try:
-            # Map status names to Alpaca OrderStatus enum if provided
-            if status:
-                status_enum = OrderStatus(status.upper())
-                orders = self.client.get_orders(status=status_enum)
-            else:
-                orders = self.client.get_orders()
+            # Get all orders from Alpaca
+            orders = self.client.get_orders()
 
             result = []
-            # Limit results to the requested amount
-            for order in orders[:limit]:
+            # Filter and limit results
+            for order in orders:
+                # Filter by status in Python if requested
+                if status:
+                    order_status = order.status.value.upper()
+                    status_lower = status.lower()
+
+                    # 'open' = orders not in terminal state
+                    if status_lower == 'open':
+                        if order_status in ['FILLED', 'CANCELED', 'EXPIRED', 'REJECTED']:
+                            continue
+                    # 'closed' = orders in terminal state
+                    elif status_lower == 'closed':
+                        if order_status not in ['FILLED', 'CANCELED', 'EXPIRED', 'REJECTED']:
+                            continue
+                    # Exact status match (case-insensitive)
+                    elif status_lower != order_status.lower():
+                        continue
+
                 result.append({
                     'id': str(order.id),
                     'symbol': order.symbol,
@@ -372,6 +385,11 @@ class AlpacaBroker(IBroker):
                     'filled_at': order.filled_at.isoformat() if order.filled_at else None,
                     'filled_avg_price': float(order.filled_avg_price) if order.filled_avg_price else None,
                 })
+
+                # Stop when we reach the limit
+                if len(result) >= limit:
+                    break
+
             return result
         except Exception as e:
             logger.error(f"Failed to get orders: {e}")
