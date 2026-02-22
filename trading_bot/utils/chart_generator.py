@@ -3,6 +3,9 @@
 import asyncio
 import io
 import logging
+import os
+import sys
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -14,6 +17,35 @@ from plotly.subplots import make_subplots
 from trading_bot.database.models import Trade
 
 logger = logging.getLogger(__name__)
+
+
+def _get_system_info() -> Dict[str, Any]:
+    """Get system resource information for diagnostics."""
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        return {
+            "memory_mb": process.memory_info().rss / 1024 / 1024,
+            "cpu_percent": process.cpu_percent(interval=0.1),
+            "num_threads": process.num_threads(),
+            "open_files": len(process.open_files()),
+        }
+    except ImportError:
+        return {}
+    except Exception as e:
+        logger.debug(f"Failed to get system info: {e}")
+        return {}
+
+
+def _log_chart_diagnostic(stage: str, chart_type: str, data: Dict[str, Any]) -> None:
+    """Log diagnostic information about chart generation."""
+    sys_info = _get_system_info()
+    log_msg = f"[{chart_type}] {stage}"
+    if sys_info:
+        log_msg += f" | Memory: {sys_info['memory_mb']:.1f}MB | Threads: {sys_info['num_threads']} | CPU: {sys_info['cpu_percent']:.1f}%"
+    if data:
+        log_msg += f" | {data}"
+    logger.debug(log_msg)
 
 
 class ChartGenerator:
@@ -61,76 +93,125 @@ class ChartGenerator:
         if not cumulative_pnls:
             return None, {}
 
-        # Create figure
-        fig = go.Figure()
-
-        # Add main cumulative P&L line
-        fig.add_trace(
-            go.Scatter(
-                x=timestamps,
-                y=cumulative_pnls,
-                mode="lines+markers",
-                name="Cumulative P&L",
-                line=dict(color=cls.COLOR_NEUTRAL, width=3),
-                marker=dict(size=6),
-                fill="tozeroy",
-                fillcolor=f"rgba({int('1f77b4'[1:3], 16)}, {int('1f77b4'[3:5], 16)}, {int('1f77b4'[5:7], 16)}, 0.15)",
-            )
+        # Log chart complexity
+        _log_chart_diagnostic(
+            "START",
+            "PnL",
+            {"trades": len(sorted_trades), "data_points": len(cumulative_pnls)}
         )
 
-        # Add zero line
-        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
-
-        # Calculate max drawdown
-        running_max = np.maximum.accumulate(cumulative_pnls)
-        drawdown = np.array(cumulative_pnls) - running_max
-        max_drawdown = float(np.min(drawdown)) if len(drawdown) > 0 else 0
-
-        # Update layout
-        fig.update_layout(
-            title={
-                "text": "Cumulative P&L Over Time",
-                "x": 0.5,
-                "xanchor": "center",
-                "font": {"size": 20, "color": "#000000"},
-            },
-            xaxis_title="Date",
-            yaxis_title="P&L ($)",
-            template=cls.TEMPLATE,
-            height=cls.HEIGHT,
-            width=cls.WIDTH,
-            hovermode="x unified",
-            margin=dict(l=80, r=40, t=80, b=60),
-            font=dict(family="Arial, sans-serif", size=12),
-            yaxis_tickformat="$,.0f",
-            showlegend=True,
-            legend=dict(x=0.02, y=0.98),
-        )
-
-        # Render to PNG bytes with timeout
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Create figure
+            logger.debug("Creating Plotly figure for P&L chart")
+            fig = go.Figure()
 
-        try:
-            png_bytes = loop.run_until_complete(
-                asyncio.wait_for(
-                    asyncio.to_thread(
-                        fig.to_image,
-                        format="png",
-                        width=cls.WIDTH,
-                        height=cls.HEIGHT
-                    ),
-                    timeout=15.0  # 15 second timeout for P&L chart
+            # Add main cumulative P&L line
+            logger.debug("Adding cumulative P&L trace")
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=cumulative_pnls,
+                    mode="lines+markers",
+                    name="Cumulative P&L",
+                    line=dict(color=cls.COLOR_NEUTRAL, width=3),
+                    marker=dict(size=6),
+                    fill="tozeroy",
+                    fillcolor=f"rgba({int('1f77b4'[1:3], 16)}, {int('1f77b4'[3:5], 16)}, {int('1f77b4'[5:7], 16)}, 0.15)",
                 )
             )
-        except asyncio.TimeoutError:
-            logger.warning("P&L chart rendering timed out (15s), returning None")
-            return None, {}
+
+            # Add zero line
+            logger.debug("Adding zero line reference")
+            fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+
+            # Calculate max drawdown
+            logger.debug("Calculating drawdown metrics")
+            running_max = np.maximum.accumulate(cumulative_pnls)
+            drawdown = np.array(cumulative_pnls) - running_max
+            max_drawdown = float(np.min(drawdown)) if len(drawdown) > 0 else 0
+
+            # Update layout
+            logger.debug("Updating figure layout and styling")
+            fig.update_layout(
+                title={
+                    "text": "Cumulative P&L Over Time",
+                    "x": 0.5,
+                    "xanchor": "center",
+                    "font": {"size": 20, "color": "#000000"},
+                },
+                xaxis_title="Date",
+                yaxis_title="P&L ($)",
+                template=cls.TEMPLATE,
+                height=cls.HEIGHT,
+                width=cls.WIDTH,
+                hovermode="x unified",
+                margin=dict(l=80, r=40, t=80, b=60),
+                font=dict(family="Arial, sans-serif", size=12),
+                yaxis_tickformat="$,.0f",
+                showlegend=True,
+                legend=dict(x=0.02, y=0.98),
+            )
+
+            # Render to PNG bytes with timeout
+            _log_chart_diagnostic("RENDER_START", "PnL", {})
+            start_time = time.time()
+
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                logger.debug("Creating new asyncio event loop")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            try:
+                logger.debug("Starting Kaleido rendering (timeout: 15s)")
+                png_bytes = loop.run_until_complete(
+                    asyncio.wait_for(
+                        asyncio.to_thread(
+                            fig.to_image,
+                            format="png",
+                            width=cls.WIDTH,
+                            height=cls.HEIGHT
+                        ),
+                        timeout=15.0  # 15 second timeout for P&L chart
+                    )
+                )
+                elapsed = time.time() - start_time
+                _log_chart_diagnostic(
+                    "RENDER_SUCCESS",
+                    "PnL",
+                    {"size_kb": len(png_bytes) / 1024, "elapsed_s": f"{elapsed:.2f}"}
+                )
+            except asyncio.TimeoutError:
+                elapsed = time.time() - start_time
+                _log_chart_diagnostic(
+                    "RENDER_TIMEOUT",
+                    "PnL",
+                    {"elapsed_s": f"{elapsed:.2f}", "timeout_s": 15}
+                )
+                logger.warning(
+                    f"P&L chart rendering timed out after {elapsed:.1f}s. "
+                    "This may indicate: Kaleido not installed, Chrome unavailable, "
+                    "insufficient memory, or system resource constraints. "
+                    "Install psutil for detailed diagnostics: pip install psutil"
+                )
+                return None, {}
+            except Exception as e:
+                elapsed = time.time() - start_time
+                _log_chart_diagnostic(
+                    "RENDER_ERROR",
+                    "PnL",
+                    {"error": str(e), "elapsed_s": f"{elapsed:.2f}"}
+                )
+                logger.error(
+                    f"P&L chart rendering failed after {elapsed:.1f}s: {e}. "
+                    "Check Kaleido installation: pip install -U kaleido. "
+                    "Verify Chrome/Chromium is available on system."
+                )
+                return None, {}
+
         except Exception as e:
-            logger.error(f"P&L chart rendering failed: {e}")
+            logger.error(f"P&L chart generation failed: {e}", exc_info=True)
             return None, {}
 
         # Calculate metrics
@@ -335,13 +416,22 @@ class ChartGenerator:
         fig.update_yaxes(showgrid=False, zeroline=False, showline=False, showticklabels=False, row=1, col=2)
 
         # Render to PNG bytes with timeout
+        _log_chart_diagnostic(
+            "RENDER_START",
+            "Performance",
+            {"closed": len(closed_trades), "open": len(open_trades)}
+        )
+        start_time = time.time()
+
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
+            logger.debug("Creating new asyncio event loop for performance chart")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
         try:
+            logger.debug("Starting Kaleido rendering for performance chart (timeout: 20s)")
             png_bytes = loop.run_until_complete(
                 asyncio.wait_for(
                     asyncio.to_thread(
@@ -353,11 +443,39 @@ class ChartGenerator:
                     timeout=20.0  # 20 second timeout for complex performance chart
                 )
             )
+            elapsed = time.time() - start_time
+            _log_chart_diagnostic(
+                "RENDER_SUCCESS",
+                "Performance",
+                {"size_kb": len(png_bytes) / 1024, "elapsed_s": f"{elapsed:.2f}"}
+            )
         except asyncio.TimeoutError:
-            logger.warning("Performance chart rendering timed out (20s), returning None")
+            elapsed = time.time() - start_time
+            _log_chart_diagnostic(
+                "RENDER_TIMEOUT",
+                "Performance",
+                {"elapsed_s": f"{elapsed:.2f}", "timeout_s": 20}
+            )
+            logger.warning(
+                f"Performance chart rendering timed out after {elapsed:.1f}s. "
+                "Complex chart with {len(closed_trades)} trades may exceed system resources. "
+                "Install psutil for detailed diagnostics: pip install psutil. "
+                "Try reducing time range or filtering trades."
+            )
             return None
         except Exception as e:
-            logger.error(f"Performance chart rendering failed: {e}")
+            elapsed = time.time() - start_time
+            _log_chart_diagnostic(
+                "RENDER_ERROR",
+                "Performance",
+                {"error": str(e), "elapsed_s": f"{elapsed:.2f}"}
+            )
+            logger.error(
+                f"Performance chart rendering failed after {elapsed:.1f}s: {e}. "
+                "Check Kaleido installation: pip install -U kaleido. "
+                "Verify Chrome/Chromium is available on system.",
+                exc_info=True
+            )
             return None
 
         return png_bytes
