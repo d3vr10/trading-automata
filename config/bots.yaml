@@ -1,0 +1,104 @@
+# Multi-Bot Trading Configuration
+#
+# This file defines all trading bot instances and global settings.
+# Alternatively, place individual bot configs in config/bots/*.yaml
+#
+# Precedence: environment variables > YAML values > pydantic defaults
+# Use ${ENV_VAR} syntax to reference environment variables
+#
+# Example:
+#   api_key: "${ALPACA_API_KEY}"  # Reads from ALPACA_API_KEY env var
+#   broker:
+#     api_key: "${ALPACA_API_KEY}"
+
+# Global settings shared across all bots
+global:
+  database_url: "postgresql://postgres:postgres@localhost:5432/trading_bot"
+  telegram_token: "${TELEGRAM_TOKEN}"
+  telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+  telegram_username_whitelist: "your_username,another_user"
+  telegram_webhook_url: ""
+  telegram_webhook_secret: ""
+  telegram_webhook_port: 8080
+  log_level: "INFO"
+  log_file: "logs/trading_bot.log"
+  database_pool_size: 10
+  database_max_overflow: 20
+  health_check_interval: 300
+  use_cached_data: true
+
+# List of trading bot instances to run
+bots:
+  # Example 1: Alpaca Paper Trading Bot
+  - name: "alpaca_rsi_atr"
+    enabled: true
+    broker:
+      type: "alpaca"
+      environment: "paper"
+      api_key: "${ALPACA_API_KEY}"
+      secret_key: "${ALPACA_SECRET_KEY}"
+    allocation:
+      type: "dollars"
+      amount: 5000.00
+    fence:
+      type: "hard"           # Refuse trades exceeding allocation
+      overage_pct: 0.0
+    risk:
+      stop_loss_pct: 2.0     # 2% stop loss per trade
+      take_profit_pct: 6.0   # 6% take profit per trade
+      max_position_size: 0.1 # Max 10% of allocation per position
+      max_portfolio_risk: 0.02
+    trade_frequency:
+      poll_interval_minutes: 1
+    strategy_config: "config/strategies.yaml"
+    data_provider:
+      type: "alpaca"
+      api_key: "${ALPACA_API_KEY}"
+      secret_key: "${ALPACA_SECRET_KEY}"
+
+  # Example 2: Coinbase Live Trading Bot (commented out - uncomment to enable)
+  # - name: "coinbase_sigma_fast"
+  #   enabled: false
+  #   broker:
+  #     type: "coinbase"
+  #     environment: "live"
+  #     api_key: "${COINBASE_API_KEY}"
+  #     secret_key: "${COINBASE_SECRET_KEY}"
+  #     passphrase: "${COINBASE_PASSPHRASE}"
+  #   allocation:
+  #     type: "dollars"
+  #     amount: 2000.00
+  #   fence:
+  #     type: "soft"           # Allow 5% overage with warning
+  #     overage_pct: 0.05
+  #   risk:
+  #     stop_loss_pct: 1.0
+  #     take_profit_pct: 3.0
+  #     max_position_size: 0.2
+  #     max_portfolio_risk: 0.01
+  #   trade_frequency:
+  #     poll_interval_minutes: 1
+  #   strategy_config: "config/bots/coinbase_strategies.yaml"
+  #   data_provider:
+  #     type: "alpaca"
+  #     api_key: "${ALPACA_API_KEY}"
+  #     secret_key: "${ALPACA_SECRET_KEY}"
+
+# Notes:
+# - Each bot runs in its own asyncio task with independent state
+# - The "allocation" creates a virtual fence - the bot will never spend more than allocated
+# - "fence.type: hard" = refuse orders exceeding allocation (safe but strict)
+# - "fence.type: soft" = allow overage_pct of allocation, warn if exceeded (flexible)
+# - "poll_interval_minutes" = how often to check for new bars (1 = 1-minute bars)
+# - Environment variables are replaced at load time with ${VAR_NAME} syntax
+# - All times are UTC; trade timestamps are UTC
+#
+# To disable a bot temporarily, set "enabled: false"
+#
+# To add a new bot:
+# 1. Copy the alpaca_rsi_atr section
+# 2. Change the "name" to something unique
+# 3. Update broker credentials (api_key, secret_key)
+# 4. Adjust allocation.amount and risk parameters
+# 5. Point to appropriate strategy_config
+# 6. Set "enabled: true"
