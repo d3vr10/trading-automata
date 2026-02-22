@@ -672,17 +672,69 @@ class TradingBot:
             except Exception as e:
                 logger.error(f"Error closing database connection: {e}")
 
-        # Stop Telegram bot
+        # Stop Telegram bot with timeout and retry
         if self.telegram_bot:
             try:
-                await self.telegram_bot.send_message(
+                # Send shutdown notification with retry logic
+                shutdown_msg = (
                     "🛑 <b>Trading Bot Stopped</b>\n"
                     f"Shutdown time: {datetime.now(UTC).strftime('%H:%M:%S UTC')}"
                 )
-                await self.telegram_bot.stop()
-                logger.info("Telegram bot stopped")
+
+                max_retries = 3
+                timeout_per_attempt = 3.0  # seconds
+                total_timeout = 8.0  # seconds max for all retries
+
+                shutdown_start = datetime.now(UTC)
+                last_error = None
+
+                for attempt in range(max_retries):
+                    try:
+                        # Check if we've exceeded total timeout
+                        elapsed = (datetime.now(UTC) - shutdown_start).total_seconds()
+                        if elapsed > total_timeout:
+                            logger.warning(f"Shutdown notification timeout exceeded ({elapsed:.1f}s), proceeding with shutdown")
+                            break
+
+                        # Try to send with timeout for this attempt
+                        remaining_timeout = total_timeout - elapsed
+                        attempt_timeout = min(timeout_per_attempt, remaining_timeout)
+
+                        await asyncio.wait_for(
+                            self.telegram_bot.send_message(shutdown_msg),
+                            timeout=attempt_timeout
+                        )
+                        logger.info("Shutdown notification sent to Telegram")
+                        break  # Success, exit retry loop
+
+                    except asyncio.TimeoutError:
+                        last_error = "timeout"
+                        if attempt < max_retries - 1:
+                            backoff = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                            logger.warning(f"Telegram notification timeout (attempt {attempt+1}/{max_retries}), retrying in {backoff}s...")
+                            await asyncio.sleep(backoff)
+                    except Exception as e:
+                        last_error = str(e)
+                        if attempt < max_retries - 1:
+                            backoff = 0.5 * (2 ** attempt)
+                            logger.warning(f"Telegram notification error (attempt {attempt+1}/{max_retries}): {e}, retrying in {backoff}s...")
+                            await asyncio.sleep(backoff)
+
+                # Log final status if all retries failed
+                if last_error:
+                    logger.warning(f"Failed to send Telegram shutdown notification after {max_retries} attempts: {last_error}")
+
+                # Stop Telegram bot
+                try:
+                    await asyncio.wait_for(self.telegram_bot.stop(), timeout=3.0)
+                    logger.info("Telegram bot stopped")
+                except asyncio.TimeoutError:
+                    logger.warning("Telegram bot stop timed out, proceeding with shutdown")
+                except Exception as e:
+                    logger.warning(f"Error stopping Telegram bot: {e}")
+
             except Exception as e:
-                logger.error(f"Error stopping Telegram bot: {e}")
+                logger.error(f"Error in Telegram shutdown sequence: {e}")
 
     def stop(self) -> None:
         """Stop the trading bot and cleanup resources."""
