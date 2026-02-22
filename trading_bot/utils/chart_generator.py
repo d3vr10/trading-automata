@@ -148,7 +148,7 @@ class ChartGenerator:
                 "Strategy Performance",
             ),
             specs=[
-                [{"type": "pie"}, {"type": "domain"}],
+                [{"type": "pie"}, {"type": "xy"}],
                 [{"type": "histogram"}, {"type": "bar"}],
             ],
             vertical_spacing=0.15,
@@ -189,8 +189,8 @@ class ChartGenerator:
         metrics_text = cls._get_metrics_text(closed_trades, open_trades)
         fig.add_annotation(
             text=metrics_text,
-            xref="x2 domain",
-            yref="y2 domain",
+            xref="x2",
+            yref="y2",
             x=0.5,
             y=0.5,
             showarrow=False,
@@ -305,6 +305,10 @@ class ChartGenerator:
         fig.update_xaxes(title_text="P&L ($)", title_font=dict(size=12), row=2, col=1)
         fig.update_yaxes(title_text="Frequency", title_font=dict(size=12), row=2, col=1)
         fig.update_xaxes(title_text="Total P&L ($)", title_font=dict(size=12), row=2, col=2)
+
+        # Hide axes for metrics subplot (1, 2) since it's text-only
+        fig.update_xaxes(showgrid=False, zeroline=False, showline=False, showticklabels=False, row=1, col=2)
+        fig.update_yaxes(showgrid=False, zeroline=False, showline=False, showticklabels=False, row=1, col=2)
 
         # Render to PNG bytes
         png_bytes = fig.to_image(format="png", width=1400, height=900)
