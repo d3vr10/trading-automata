@@ -93,6 +93,7 @@ class TradingBotTelegram:
         self.application: Optional[Application] = None
         self._bot = None
         self._paused = False  # Track pause/resume state
+        self.bot_registry: Dict[str, Any] = {}  # Dict of bot_name -> BotInstance for multi-bot support
 
         if not token:
             logger.warning("Telegram token not configured - bot notifications disabled")
@@ -169,6 +170,15 @@ class TradingBotTelegram:
             )
             self.application.add_handler(
                 CommandHandler("strategies", self._cmd_strategies)
+            )
+            self.application.add_handler(
+                CommandHandler("bots", self._cmd_bots)
+            )
+            self.application.add_handler(
+                CommandHandler("pause_bot", self._cmd_pause_bot)
+            )
+            self.application.add_handler(
+                CommandHandler("resume_bot", self._cmd_resume_bot)
             )
             self.application.add_handler(
                 CallbackQueryHandler(self._handle_trades_callback, pattern="^trades_")
@@ -1827,6 +1837,82 @@ No bot session found - bot may not have started yet.
         except Exception as e:
             logger.error(f"Failed to start Telegram bot: {e}")
 
+    def set_bot_registry(self, bot_registry: Dict[str, Any]) -> None:
+        """Set the bot registry for multi-bot commands.
+
+        Args:
+            bot_registry: Dictionary mapping bot_name -> BotInstance
+        """
+        self.bot_registry = bot_registry
+        logger.debug(f"Bot registry updated with {len(bot_registry)} bots")
+
+    async def _cmd_bots(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """List all bot instances and their status.
+
+        Usage: /bots
+        """
+        if not self._check_auth(update):
+            return
+
+        if not self.bot_registry:
+            await update.message.reply_text("No bots configured")
+            return
+
+        message = "<b>Bot Instances Status</b>\n\n"
+        for bot_name, bot_instance in self.bot_registry.items():
+            status = "▶️ Running" if bot_instance._running else "⏸️ Stopped"
+            paused = " (Paused)" if bot_instance._paused else ""
+            message += f"<b>{bot_name}</b> {status}{paused}\n"
+            if hasattr(bot_instance, 'portfolio_manager') and bot_instance.portfolio_manager:
+                vm = bot_instance.portfolio_manager
+                message += f"  • Allocation: ${float(vm.allocated_capital):.2f}\n"
+                message += f"  • Virtual Balance: ${float(vm.virtual_balance):.2f}\n"
+            message += "\n"
+
+        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
+
+    async def _cmd_pause_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Pause a specific bot instance.
+
+        Usage: /pause_bot <bot_name>
+        """
+        if not self._check_auth(update):
+            return
+
+        if not context.args:
+            await update.message.reply_text("Usage: /pause_bot <bot_name>")
+            return
+
+        bot_name = context.args[0]
+        if bot_name not in self.bot_registry:
+            await update.message.reply_text(f"Bot '{bot_name}' not found")
+            return
+
+        bot_instance = self.bot_registry[bot_name]
+        bot_instance._set_paused(True)
+        await update.message.reply_text(f"Bot '{bot_name}' paused ⏸️")
+
+    async def _cmd_resume_bot(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Resume a paused bot instance.
+
+        Usage: /resume_bot <bot_name>
+        """
+        if not self._check_auth(update):
+            return
+
+        if not context.args:
+            await update.message.reply_text("Usage: /resume_bot <bot_name>")
+            return
+
+        bot_name = context.args[0]
+        if bot_name not in self.bot_registry:
+            await update.message.reply_text(f"Bot '{bot_name}' not found")
+            return
+
+        bot_instance = self.bot_registry[bot_name]
+        bot_instance._set_paused(False)
+        await update.message.reply_text(f"Bot '{bot_name}' resumed ▶️")
+
     async def stop(self) -> None:
         """Stop the bot."""
         if not self.application:
@@ -1844,3 +1930,117 @@ No bot session found - bot may not have started yet.
             logger.info("Telegram bot stopped")
         except Exception as e:
             logger.error(f"Error stopping Telegram bot: {e}")
+
+
+class BotScopedTelegram:
+    """Wrapper around TradingBotTelegram that prepends bot name to all messages.
+
+    This allows BotInstance to use Telegram notifications without modification while
+    keeping the shared TradingBotTelegram instance unchanged. All messages automatically
+    get "[bot_name]" prepended for easy identification in multi-bot deployments.
+    """
+
+    def __init__(self, delegate: TradingBotTelegram, bot_name: str):
+        """Initialize scoped Telegram wrapper.
+
+        Args:
+            delegate: Shared TradingBotTelegram instance
+            bot_name: Bot instance name to prepend to messages
+        """
+        self.delegate = delegate
+        self.bot_name = bot_name
+
+    async def send_message(self, text: str, parse_mode=ParseMode.HTML) -> bool:
+        """Send message with bot name prepended.
+
+        Args:
+            text: Message text
+            parse_mode: How to parse message (HTML, MARKDOWN, etc.)
+
+        Returns:
+            True if sent successfully, False otherwise.
+        """
+        prefixed_text = f"<b>[{self.bot_name}]</b> {text}"
+        return await self.delegate.send_message(prefixed_text, parse_mode)
+
+    async def send_trade_alert(
+        self,
+        symbol: str,
+        side: str,
+        price: Decimal,
+        quantity: Decimal,
+        strategy: str,
+    ) -> None:
+        """Send trade execution alert with bot name.
+
+        Args:
+            symbol: Trading symbol
+            side: 'buy' or 'sell'
+            price: Entry/exit price
+            quantity: Trade quantity
+            strategy: Strategy name
+        """
+        side_emoji = "📈" if side.lower() == "buy" else "📉"
+        message = f"""{side_emoji} <b>Trade Executed [{self.bot_name}]</b>
+
+<b>Symbol:</b> {symbol}
+<b>Side:</b> {side.upper()}
+<b>Price:</b> ${float(price):.2f}
+<b>Quantity:</b> {float(quantity):.4f}
+<b>Strategy:</b> {strategy}
+<b>Time:</b> {datetime.now(UTC).strftime('%H:%M:%S UTC')}
+"""
+        await self.delegate.send_message(message)
+
+    async def send_performance_alert(
+        self, win_rate: float, profit_factor: float, total_trades: int
+    ) -> None:
+        """Send performance update with bot name.
+
+        Args:
+            win_rate: Winning trades percentage
+            profit_factor: Profit factor ratio
+            total_trades: Total trades executed
+        """
+        emoji = "✅" if win_rate > 50 else "⚠️"
+        message = f"""{emoji} <b>Performance Update [{self.bot_name}]</b>
+
+<b>Total Trades:</b> {total_trades}
+<b>Win Rate:</b> {win_rate:.1f}%
+<b>Profit Factor:</b> {profit_factor:.2f}
+"""
+        await self.delegate.send_message(message)
+
+    async def send_error_alert(self, error_type: str, message: str) -> None:
+        """Send error alert with bot name.
+
+        Args:
+            error_type: Type of error
+            message: Error message
+        """
+        error_msg = f"""🚨 <b>Error [{self.bot_name}]</b>
+
+<b>Type:</b> {error_type}
+<b>Message:</b> {message}
+"""
+        await self.delegate.send_message(error_msg)
+
+    async def send_health_alert(
+        self, status: str, errors: int, last_bar: Optional[str] = None
+    ) -> None:
+        """Send health alert with bot name.
+
+        Args:
+            status: Health status
+            errors: Number of errors
+            last_bar: Last bar timestamp
+        """
+        emoji = "🟢" if status.lower() == "healthy" else "🔴"
+        msg = f"""{emoji} <b>Health Check [{self.bot_name}]</b>
+
+<b>Status:</b> {status}
+<b>Errors:</b> {errors}
+"""
+        if last_bar:
+            msg += f"<b>Last Bar:</b> {last_bar}\n"
+        await self.delegate.send_message(msg)

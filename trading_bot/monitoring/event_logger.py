@@ -63,6 +63,7 @@ class EventLogger:
         strategy: str,
         broker: str,
         details: Dict[str, Any],
+        bot_name: Optional[str] = None,
     ):
         """Log when a new bar is received."""
         await self._log(
@@ -73,6 +74,7 @@ class EventLogger:
             severity=self.SEV_DEBUG,
             message=f"Bar received for {symbol}",
             details=details,
+            bot_name=bot_name,
         )
         logger.debug(f"[{symbol}] Bar received: O={details.get('open')}, H={details.get('high')}, L={details.get('low')}, C={details.get('close')}")
 
@@ -85,6 +87,7 @@ class EventLogger:
         passed: bool,
         message: str,
         details: Dict[str, Any],
+        bot_name: Optional[str] = None,
     ):
         """Log filter check results."""
         event_type = self.EVENT_FILTER_PASSED if passed else self.EVENT_FILTER_FAILED
@@ -99,6 +102,7 @@ class EventLogger:
             severity=severity,
             message=f"{status} {filter_name}: {message}",
             details=details,
+            bot_name=bot_name,
         )
 
         log_fn = logger.debug if passed else logger.warning
@@ -113,6 +117,7 @@ class EventLogger:
         quantity: float,
         confidence: float,
         details: Dict[str, Any],
+        bot_name: Optional[str] = None,
     ):
         """Log when a trading signal is generated."""
         await self._log(
@@ -123,6 +128,7 @@ class EventLogger:
             severity=self.SEV_INFO,
             message=f"Signal generated: {action.upper()} {quantity} @ confidence {confidence:.2f}",
             details=details,
+            bot_name=bot_name,
         )
         logger.info(f"[{symbol}] [{strategy}] 🎯 SIGNAL: {action.upper()} qty={quantity}, confidence={confidence:.2f}")
 
@@ -136,6 +142,7 @@ class EventLogger:
         quantity: float,
         price: Optional[float] = None,
         details: Dict[str, Any] = None,
+        bot_name: Optional[str] = None,
     ):
         """Log when an order is submitted."""
         details = details or {}
@@ -154,6 +161,7 @@ class EventLogger:
             severity=self.SEV_INFO,
             message=f"Order submitted: {order_id}",
             details=details,
+            bot_name=bot_name,
         )
         logger.info(f"[{symbol}] [{strategy}] ✓ Order submitted: {order_id}, {side.upper()} {quantity}")
 
@@ -167,6 +175,7 @@ class EventLogger:
         quantity: float,
         filled_price: float,
         details: Dict[str, Any] = None,
+        bot_name: Optional[str] = None,
     ):
         """Log when an order is filled."""
         details = details or {}
@@ -185,6 +194,7 @@ class EventLogger:
             severity=self.SEV_INFO,
             message=f"Order filled: {order_id}",
             details=details,
+            bot_name=bot_name,
         )
         logger.info(f"[{symbol}] [{strategy}] ✓ Order FILLED: {order_id}, {side.upper()} {quantity} @ {filled_price:.2f}")
 
@@ -196,6 +206,7 @@ class EventLogger:
         order_id: str,
         reason: str,
         details: Dict[str, Any] = None,
+        bot_name: Optional[str] = None,
     ):
         """Log when an order fails."""
         details = details or {}
@@ -209,6 +220,7 @@ class EventLogger:
             severity=self.SEV_ERROR,
             message=f"Order failed: {order_id} - {reason}",
             details=details,
+            bot_name=bot_name,
         )
         logger.error(f"[{symbol}] [{strategy}] ✗ Order FAILED: {order_id} - {reason}")
 
@@ -220,6 +232,7 @@ class EventLogger:
         message: str,
         details: Dict[str, Any] = None,
         exception: Exception = None,
+        bot_name: Optional[str] = None,
     ):
         """Log an error event."""
         details = details or {}
@@ -235,6 +248,7 @@ class EventLogger:
             severity=self.SEV_ERROR,
             message=message,
             details=details,
+            bot_name=bot_name,
         )
         logger.error(f"[{symbol}] [{strategy}] ERROR: {message}")
 
@@ -245,6 +259,7 @@ class EventLogger:
         broker: str,
         message: str,
         details: Dict[str, Any] = None,
+        bot_name: Optional[str] = None,
     ):
         """Log a warning event."""
         await self._log(
@@ -255,6 +270,7 @@ class EventLogger:
             severity=self.SEV_WARNING,
             message=message,
             details=details or {},
+            bot_name=bot_name,
         )
         logger.warning(f"[{symbol}] [{strategy}] WARNING: {message}")
 
@@ -267,6 +283,7 @@ class EventLogger:
         severity: str,
         message: str,
         details: Dict[str, Any],
+        bot_name: Optional[str] = None,
     ):
         """Internal method to log to database using ORM."""
         if not self.enabled:
@@ -281,6 +298,7 @@ class EventLogger:
                     strategy=strategy,
                     symbol=symbol,
                     broker=broker,
+                    bot_name=bot_name,
                     message=message,
                     details=json.dumps(details, cls=DecimalJSONEncoder) if details else None,
                 )

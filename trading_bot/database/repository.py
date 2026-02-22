@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from trading_bot.database.models import Trade, Position
+from trading_bot.database.models import Trade, Position, HealthCheck
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ class TradeRepository:
         entry_quantity: Decimal,
         entry_order_id: Optional[str] = None,
         notes: Optional[str] = None,
+        bot_name: Optional[str] = None,
     ) -> int:
         """Record a trade entry (opening position).
 
@@ -47,6 +48,7 @@ class TradeRepository:
             entry_quantity: Quantity entered
             entry_order_id: Optional order ID from broker
             notes: Optional notes about the trade
+            bot_name: Optional bot instance name (for multi-bot tracking)
 
         Returns:
             Trade ID for later reference
@@ -57,6 +59,7 @@ class TradeRepository:
                     symbol=symbol,
                     strategy=strategy,
                     broker=broker,
+                    bot_name=bot_name,
                     entry_timestamp=datetime.now(UTC),
                     entry_price=entry_price,
                     entry_quantity=entry_quantity,
@@ -66,7 +69,10 @@ class TradeRepository:
                 session.add(trade)
                 await session.commit()
                 await session.refresh(trade)
-                logger.info(f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade.id})")
+                log_msg = f"Trade entry recorded: {symbol} {entry_quantity} @ {entry_price} (ID: {trade.id})"
+                if bot_name:
+                    log_msg = f"[{bot_name}] {log_msg}"
+                logger.info(log_msg)
                 return trade.id
         except Exception as e:
             logger.error(f"Failed to record trade entry: {e}")
@@ -124,6 +130,7 @@ class TradeRepository:
         symbol: str,
         days: int = 7,
         limit: int = 100,
+        bot_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get recent trades for a symbol.
 
@@ -131,6 +138,7 @@ class TradeRepository:
             symbol: Trading symbol
             days: Look back N days
             limit: Maximum trades to return
+            bot_name: Optional bot instance name (filters by bot if provided)
 
         Returns:
             List of trade records as dictionaries
@@ -138,14 +146,16 @@ class TradeRepository:
         try:
             async with self.session() as session:
                 cutoff_date = datetime.now(UTC) - timedelta(days=days)
+                conditions = [
+                    Trade.symbol == symbol,
+                    Trade.entry_timestamp > cutoff_date,
+                ]
+                if bot_name:
+                    conditions.append(Trade.bot_name == bot_name)
+
                 stmt = (
                     select(Trade)
-                    .where(
-                        and_(
-                            Trade.symbol == symbol,
-                            Trade.entry_timestamp > cutoff_date,
-                        )
-                    )
+                    .where(and_(*conditions))
                     .order_by(Trade.entry_timestamp.desc())
                     .limit(limit)
                 )
@@ -183,6 +193,7 @@ class TradeRepository:
         strategy: str,
         days: int = 7,
         limit: int = 100,
+        bot_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get trades by strategy.
 
@@ -190,6 +201,7 @@ class TradeRepository:
             strategy: Strategy name
             days: Look back N days
             limit: Maximum trades to return
+            bot_name: Optional bot instance name (filters by bot if provided)
 
         Returns:
             List of trade records as dictionaries
@@ -197,14 +209,16 @@ class TradeRepository:
         try:
             async with self.session() as session:
                 cutoff_date = datetime.now(UTC) - timedelta(days=days)
+                conditions = [
+                    Trade.strategy == strategy,
+                    Trade.entry_timestamp > cutoff_date,
+                ]
+                if bot_name:
+                    conditions.append(Trade.bot_name == bot_name)
+
                 stmt = (
                     select(Trade)
-                    .where(
-                        and_(
-                            Trade.strategy == strategy,
-                            Trade.entry_timestamp > cutoff_date,
-                        )
-                    )
+                    .where(and_(*conditions))
                     .order_by(Trade.entry_timestamp.desc())
                     .limit(limit)
                 )
@@ -240,12 +254,14 @@ class TradeRepository:
         self,
         strategy: Optional[str] = None,
         days: int = 7,
+        bot_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get performance metrics for a strategy.
 
         Args:
             strategy: Strategy name (None for all)
             days: Look back N days
+            bot_name: Optional bot instance name (filters by bot if provided)
 
         Returns:
             Dictionary with metrics
@@ -255,15 +271,16 @@ class TradeRepository:
                 cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
                 # Build query
-                stmt = select(Trade).where(
-                    and_(
-                        Trade.entry_timestamp > cutoff_date,
-                        Trade.exit_timestamp.isnot(None),
-                    )
-                )
-
+                conditions = [
+                    Trade.entry_timestamp > cutoff_date,
+                    Trade.exit_timestamp.isnot(None),
+                ]
                 if strategy:
-                    stmt = stmt.where(Trade.strategy == strategy)
+                    conditions.append(Trade.strategy == strategy)
+                if bot_name:
+                    conditions.append(Trade.bot_name == bot_name)
+
+                stmt = select(Trade).where(and_(*conditions))
 
                 result = await session.execute(stmt)
                 trades = result.scalars().all()
@@ -307,21 +324,29 @@ class TradeRepository:
             logger.error(f"Failed to get performance metrics: {e}")
             return {}
 
-    async def get_open_positions(self, strategy: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_open_positions(
+        self,
+        strategy: Optional[str] = None,
+        bot_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """Get currently open positions.
 
         Args:
             strategy: Filter by strategy (None for all)
+            bot_name: Optional bot instance name (filters by bot if provided)
 
         Returns:
             List of open position records as dictionaries
         """
         try:
             async with self.session() as session:
-                stmt = select(Position).where(Position.is_open == True)
-
+                conditions = [Position.is_open == True]
                 if strategy:
-                    stmt = stmt.where(Position.strategy == strategy)
+                    conditions.append(Position.strategy == strategy)
+                if bot_name:
+                    conditions.append(Position.bot_name == bot_name)
+
+                stmt = select(Position).where(and_(*conditions))
 
                 stmt = stmt.order_by(Position.opened_at.desc())
 
@@ -357,6 +382,7 @@ class TradeRepository:
         entry_price: Decimal,
         stop_loss: Optional[Decimal] = None,
         take_profit: Optional[Decimal] = None,
+        bot_name: Optional[str] = None,
     ) -> int:
         """Record an open position.
 
@@ -368,6 +394,7 @@ class TradeRepository:
             entry_price: Entry price
             stop_loss: Optional stop loss price
             take_profit: Optional take profit price
+            bot_name: Optional bot instance name (for multi-bot tracking)
 
         Returns:
             Position ID
@@ -378,6 +405,7 @@ class TradeRepository:
                     symbol=symbol,
                     strategy=strategy,
                     broker=broker,
+                    bot_name=bot_name,
                     quantity=quantity,
                     entry_price=entry_price,
                     stop_loss=stop_loss,
@@ -387,7 +415,10 @@ class TradeRepository:
                 session.add(position)
                 await session.commit()
                 await session.refresh(position)
-                logger.info(f"Position recorded: {symbol} {quantity} (ID: {position.id})")
+                log_msg = f"Position recorded: {symbol} {quantity} (ID: {position.id})"
+                if bot_name:
+                    log_msg = f"[{bot_name}] {log_msg}"
+                logger.info(log_msg)
                 return position.id
         except Exception as e:
             logger.error(f"Failed to record position: {e}")

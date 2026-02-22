@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import sys
+import os
+from pathlib import Path
 from typing import List, Optional
 from decimal import Decimal
 from datetime import datetime, time, UTC
@@ -261,11 +263,17 @@ class TradingBot:
         from trading_bot.strategies.examples.mean_reversion import MeanReversionStrategy
         from trading_bot.strategies.examples.momentum import MomentumStrategy
         from trading_bot.strategies.examples.rsi_atr_trend import RSIATRTrendStrategy
+        from trading_bot.strategies.sigma_series.sigma_fast import SigmaSeriesFastStrategy
+        from trading_bot.strategies.sigma_series.sigma_alpha import SigmaSeriesAlphaStrategy
+        from trading_bot.strategies.sigma_series.sigma_alpha_bull import SigmaSeriesAlphaBullStrategy
 
         StrategyRegistry.register('BuyAndHoldStrategy', BuyAndHoldStrategy)
         StrategyRegistry.register('MeanReversionStrategy', MeanReversionStrategy)
         StrategyRegistry.register('MomentumStrategy', MomentumStrategy)
         StrategyRegistry.register('RSIATRTrendStrategy', RSIATRTrendStrategy)
+        StrategyRegistry.register('SigmaSeriesFastStrategy', SigmaSeriesFastStrategy)
+        StrategyRegistry.register('SigmaSeriesAlphaStrategy', SigmaSeriesAlphaStrategy)
+        StrategyRegistry.register('SigmaSeriesAlphaBullStrategy', SigmaSeriesAlphaBullStrategy)
 
     async def _record_session_start(self) -> None:
         """Record the current bot session start time to database.
@@ -768,13 +776,35 @@ class TradingBot:
 
 
 def main():
-    """Main entry point."""
-    bot = TradingBot()
+    """Main entry point with auto-detection of bot mode.
+
+    Automatically detects whether to run in multi-bot or single-bot mode:
+    - Multi-bot mode: If BOT_MODE=multi env var is set, or config/bots.yaml exists,
+      or config/bots/ directory exists
+    - Single-bot (legacy) mode: Otherwise, uses legacy TradingBot class
+    """
+    # Auto-detect mode
+    use_multi = (
+        os.environ.get("BOT_MODE", "").lower() == "multi"
+        or Path("config/bots.yaml").exists()
+        or Path("config/bots").is_dir()
+    )
+
     try:
-        asyncio.run(bot.start())
+        if use_multi:
+            # Multi-bot mode
+            logger.info("Multi-bot mode detected - using BotOrchestrator")
+            from trading_bot.orchestration.orchestrator import BotOrchestrator
+            orchestrator = BotOrchestrator()
+            asyncio.run(orchestrator.start())
+        else:
+            # Legacy single-bot mode
+            logger.info("Single-bot mode - using legacy TradingBot")
+            bot = TradingBot()
+            asyncio.run(bot.start())
+            bot.stop()
     except KeyboardInterrupt:
         print("\n\nShutting down...")
-        bot.stop()
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         sys.exit(1)

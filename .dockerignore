@@ -55,6 +55,7 @@ docker-compose.yml
 
 # Misc
 .env
+.env.prod
 *.log
 logs/
 .mypy_cache/

@@ -1,11 +1,14 @@
 """Command-line interface for trading bot data queries.
 
+Supports both single-bot (legacy) and multi-bot orchestration modes.
+
 Provides commands to check:
-- Bot status
+- Bot status (single or multi-bot)
 - Recent trades and performance
 - Health checks
 - Broker account information
 - Database queries
+- Multi-bot management (list, pause, resume)
 """
 
 import asyncio
@@ -13,13 +16,15 @@ import sys
 import time
 from datetime import datetime, UTC
 from decimal import Decimal
-from typing import Optional, Callable
+from pathlib import Path
+from typing import Optional, Callable, Dict, Any
 
 import click
 from sqlalchemy import select, func
 from tabulate import tabulate
 
 from config.settings import load_settings
+from trading_bot.config.loader import load_bot_configs
 from trading_bot.database.models import DatabaseConnection, Trade, Position, HealthCheck, TradingEvent, BotSession
 from trading_bot.database.repository import TradeRepository
 from trading_bot.brokers.factory import BrokerFactory
@@ -43,14 +48,47 @@ def colored(text: str, color: str) -> str:
     return f"{color}{text}{Colors.RESET}"
 
 
+def detect_multi_bot_mode() -> bool:
+    """Detect if running in multi-bot mode."""
+    return (
+        Path("config/bots.yaml").exists()
+        or Path("config/bots").is_dir()
+        or __import__('os').environ.get("BOT_MODE", "").lower() == "multi"
+    )
+
+
+def get_database_url() -> str:
+    """Get database URL from multi-bot or single-bot configuration."""
+    if detect_multi_bot_mode():
+        try:
+            config = load_bot_configs()
+            return config.global_config.database_url
+        except Exception:
+            pass
+
+    # Fallback to legacy settings
+    settings = load_settings()
+    return settings.database_url
+
+
 def get_database():
     """Get database connection with ORM session factory."""
-    settings = load_settings()
     try:
+        database_url = get_database_url()
+
+        # Try to load pool settings from legacy config
+        try:
+            settings = load_settings()
+            pool_size = settings.database_pool_size
+            max_overflow = settings.database_max_overflow
+        except:
+            pool_size = 10
+            max_overflow = 20
+
         db = DatabaseConnection(
-            database_url=settings.database_url,
-            pool_size=settings.database_pool_size,
-            max_overflow=settings.database_max_overflow,
+            database_url=database_url,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
         )
         return db
     except Exception as e:
@@ -114,64 +152,136 @@ def cli():
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Show status for specific bot (multi-bot mode)')
 @click.option('--format', type=click.Choice(['table', 'json']), default='table',
               help='Output format')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def status(format, watch):
-    """Check overall bot status."""
+def status(bot, format, watch):
+    """Check overall bot status (single or multi-bot)."""
     async def _status():
-        settings = load_settings()
+        is_multi_bot = detect_multi_bot_mode()
 
-        click.echo(f"\n{colored('🤖 Trading Bot Status', Colors.BOLD)}")
-        click.echo(colored('=' * 50, Colors.CYAN))
+        if is_multi_bot:
+            # Multi-bot mode
+            try:
+                config = load_bot_configs()
+                click.echo(f"\n{colored('🤖 Trading Bot Status (Multi-Bot Mode)', Colors.BOLD)}")
+                click.echo(colored('=' * 80, Colors.CYAN))
 
-        status_info = [
-            ['Configuration', ''],
-            ['Broker', colored(settings.broker.upper(), Colors.GREEN)],
-            ['Environment', colored(settings.trading_environment.upper(), Colors.GREEN)],
-            ['Log Level', settings.log_level],
-            ['Strategy Config', settings.strategy_config_path],
-            ['', ''],
-            ['Risk Management', ''],
-            ['Max Position Size', f"{settings.max_position_size * 100:.1f}%"],
-            ['Max Portfolio Risk', f"{settings.max_portfolio_risk * 100:.1f}%"],
-            ['', ''],
-            ['Database', ''],
-            ['Database URL', settings.database_url.split('@')[1] if '@' in settings.database_url else 'N/A'],
-            ['Pool Size', str(settings.database_pool_size)],
-        ]
+                if bot:
+                    # Show specific bot
+                    bot_config = next((b for b in config.bots if b.name == bot), None)
+                    if not bot_config:
+                        click.echo(colored(f"❌ Bot '{bot}' not found", Colors.RED))
+                        return
 
-        click.echo(tabulate(status_info, tablefmt='plain'))
-        click.echo()
+                    status_info = [
+                        ['Bot Name', colored(bot_config.name, Colors.GREEN)],
+                        ['Enabled', 'Yes' if bot_config.enabled else colored('No', Colors.YELLOW)],
+                        ['', ''],
+                        ['Broker Configuration', ''],
+                        ['Broker Type', bot_config.broker.type.upper()],
+                        ['', ''],
+                        ['Allocation', ''],
+                        ['Amount', f"${bot_config.allocation.amount:.2f}"],
+                        ['Type', bot_config.allocation.type],
+                        ['', ''],
+                        ['Fence', ''],
+                        ['Type', bot_config.fence.type.upper()],
+                        ['Overage %', f"{bot_config.fence.overage_pct * 100:.1f}%"],
+                        ['', ''],
+                        ['Risk Parameters', ''],
+                        ['Stop Loss %', f"{bot_config.risk.stop_loss_pct:.1f}%"],
+                        ['Take Profit %', f"{bot_config.risk.take_profit_pct:.1f}%"],
+                        ['Max Position Size', f"${bot_config.risk.max_position_size:.2f}"],
+                        ['Max Portfolio Risk', f"{bot_config.risk.max_portfolio_risk:.1f}%"],
+                    ]
+
+                    click.echo(tabulate(status_info, tablefmt='plain'))
+                else:
+                    # List all bots
+                    click.echo(f"Configured bots: {len(config.bots)}\n")
+
+                    rows = []
+                    for b in config.bots:
+                        status_indicator = colored('✅ ENABLED', Colors.GREEN) if b.enabled else colored('⏸️  DISABLED', Colors.YELLOW)
+                        rows.append([
+                            b.name,
+                            status_indicator,
+                            b.broker.type.upper(),
+                            f"${b.allocation.amount:.2f}",
+                            b.fence.type.upper(),
+                        ])
+
+                    click.echo(tabulate(rows, headers=['Bot Name', 'Status', 'Broker', 'Allocation', 'Fence'], tablefmt='grid'))
+
+                click.echo()
+
+            except Exception as e:
+                click.echo(colored(f"❌ Failed to load multi-bot config: {e}", Colors.RED))
+        else:
+            # Single-bot legacy mode
+            settings = load_settings()
+
+            click.echo(f"\n{colored('🤖 Trading Bot Status (Legacy Single-Bot Mode)', Colors.BOLD)}")
+            click.echo(colored('=' * 50, Colors.CYAN))
+
+            status_info = [
+                ['Configuration', ''],
+                ['Broker', colored(settings.broker.upper(), Colors.GREEN)],
+                ['Environment', colored(settings.trading_environment.upper(), Colors.GREEN)],
+                ['Log Level', settings.log_level],
+                ['Strategy Config', settings.strategy_config_path],
+                ['', ''],
+                ['Risk Management', ''],
+                ['Max Position Size', f"{settings.max_position_size * 100:.1f}%"],
+                ['Max Portfolio Risk', f"{settings.max_portfolio_risk * 100:.1f}%"],
+                ['', ''],
+                ['Database', ''],
+                ['Database URL', settings.database_url.split('@')[1] if '@' in settings.database_url else 'N/A'],
+                ['Pool Size', str(settings.database_pool_size)],
+            ]
+
+            click.echo(tabulate(status_info, tablefmt='plain'))
+            click.echo()
 
     watch_command(_status, watch)
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
 @click.option('--limit', type=int, default=10, help='Number of trades to show')
 @click.option('--symbol', type=str, default=None, help='Filter by symbol')
 @click.option('--strategy', type=str, default=None, help='Filter by strategy')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def trades(limit, symbol, strategy, watch):
+def trades(bot, limit, symbol, strategy, watch):
     """View recent trades from database."""
     async def _trades():
         db = get_database()
         repo = TradeRepository(db.session_factory)
 
         try:
+            # Get trades with appropriate filters
             if symbol:
-                trades_list = await repo.get_trades_by_symbol(symbol, limit=limit)
+                trades_list = await repo.get_trades_by_symbol(symbol, limit=limit, bot_name=bot)
             elif strategy:
-                trades_list = await repo.get_trades_by_strategy(strategy, limit=limit)
+                trades_list = await repo.get_trades_by_strategy(strategy, limit=limit, bot_name=bot)
             else:
                 # Get all recent trades
                 async with db.session_factory() as session:
-                    stmt = select(Trade).order_by(Trade.entry_timestamp.desc()).limit(limit)
+                    stmt = select(Trade).order_by(Trade.entry_timestamp.desc())
+
+                    # Filter by bot_name if provided
+                    if bot:
+                        stmt = stmt.where(Trade.bot_name == bot)
+
+                    stmt = stmt.limit(limit)
                     result = await session.execute(stmt)
                     trade_objs = result.scalars().all()
                     trades_list = [
                         {
                             'id': t.id,
+                            'bot_name': t.bot_name or 'legacy',
                             'symbol': t.symbol,
                             'strategy': t.strategy,
                             'entry_price': t.entry_price,
@@ -186,13 +296,13 @@ def trades(limit, symbol, strategy, watch):
                     ]
 
             if not trades_list:
-                click.echo(colored("No trades found", Colors.YELLOW))
+                click.echo(colored(f"No trades found{f' for bot {bot}' if bot else ''}", Colors.YELLOW))
                 return
 
-            click.echo(f"\n{colored('📊 Recent Trades', Colors.BOLD)}")
-            click.echo(colored('=' * 120, Colors.CYAN))
+            click.echo(f"\n{colored('📊 Recent Trades' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
+            click.echo(colored('=' * 130, Colors.CYAN))
 
-            headers = ['ID', 'Symbol', 'Strategy', 'Side', 'Entry Price', 'Qty',
+            headers = ['ID', 'Bot', 'Symbol', 'Strategy', 'Side', 'Entry Price', 'Qty',
                       'Exit Price', 'Exit Qty', 'P&L %', 'Entry Time', 'Exit Time']
 
             rows = []
@@ -204,6 +314,7 @@ def trades(limit, symbol, strategy, watch):
                 pnl = trade.get('pnl_percent')
                 entry_ts = trade.get('entry_timestamp')
                 exit_ts = trade.get('exit_timestamp')
+                bot_name = trade.get('bot_name', 'legacy')
 
                 # Color code P&L
                 pnl_str = f"{pnl:.2f}%" if pnl else "Open"
@@ -214,6 +325,7 @@ def trades(limit, symbol, strategy, watch):
 
                 rows.append([
                     trade['id'],
+                    bot_name,
                     trade['symbol'],
                     trade['strategy'],
                     'BUY' if entry_ts else 'N/A',
@@ -236,20 +348,21 @@ def trades(limit, symbol, strategy, watch):
 
 
 @cli.command()
-def metrics():
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
+def metrics(bot):
     """Show performance metrics."""
     async def _metrics():
         db = get_database()
         repo = TradeRepository(db.session_factory)
 
         try:
-            metrics_data = await repo.get_performance_metrics()
+            metrics_data = await repo.get_performance_metrics(bot_name=bot)
 
             if not metrics_data:
-                click.echo(colored("No metrics available yet", Colors.YELLOW))
+                click.echo(colored(f"No metrics available yet{f' for bot {bot}' if bot else ''}", Colors.YELLOW))
                 return
 
-            click.echo(f"\n{colored('📈 Performance Metrics', Colors.BOLD)}")
+            click.echo(f"\n{colored('📈 Performance Metrics' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
             click.echo(colored('=' * 50, Colors.CYAN))
 
             metrics_rows = []
@@ -268,32 +381,39 @@ def metrics():
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def health(watch):
+def health(bot, watch):
     """Check bot health status."""
     async def _health():
         db = get_database()
 
         try:
-            click.echo(f"\n{colored('🔋 Health Check Status', Colors.BOLD)}")
-            click.echo(colored('=' * 80, Colors.CYAN))
+            click.echo(f"\n{colored('🔋 Health Check Status' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
+            click.echo(colored('=' * 100, Colors.CYAN))
 
             async with db.session_factory() as session:
                 stmt = select(HealthCheck).order_by(HealthCheck.checked_at.desc())
+
+                # Filter by bot_name if provided
+                if bot:
+                    stmt = stmt.where(HealthCheck.bot_name == bot)
+
                 result = await session.execute(stmt)
                 checks = result.scalars().all()
 
                 if not checks:
-                    click.echo(colored("No health checks recorded yet", Colors.YELLOW))
+                    click.echo(colored(f"No health checks recorded yet{f' for bot {bot}' if bot else ''}", Colors.YELLOW))
                     return
 
-                headers = ['Broker', 'Strategy', 'Status', 'Errors', 'Last Bar']
+                headers = ['Bot', 'Broker', 'Strategy', 'Status', 'Errors', 'Last Bar']
                 rows = []
 
                 for check in checks:
                     status = colored('🟢 Healthy', Colors.GREEN) if check.is_healthy else colored('🔴 Unhealthy', Colors.RED)
                     last_bar = check.last_bar_timestamp.strftime('%Y-%m-%d %H:%M:%S') if check.last_bar_timestamp else 'Never'
-                    rows.append([check.broker, check.strategy or '-', status, check.connection_errors, last_bar])
+                    bot_name = check.bot_name or 'legacy'
+                    rows.append([bot_name, check.broker, check.strategy or '-', status, check.connection_errors, last_bar])
 
                 click.echo(tabulate(rows, headers=headers, tablefmt='grid'))
                 click.echo()
@@ -305,8 +425,9 @@ def health(watch):
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def positions(watch):
+def positions(bot, watch):
     """Show current open positions."""
     async def _positions():
         db = get_database()
@@ -314,21 +435,28 @@ def positions(watch):
         try:
             async with db.session_factory() as session:
                 stmt = select(Position).where(Position.is_open == True).order_by(Position.opened_at.desc())
+
+                # Filter by bot_name if provided
+                if bot:
+                    stmt = stmt.where(Position.bot_name == bot)
+
                 result = await session.execute(stmt)
                 positions_list = result.scalars().all()
 
                 if not positions_list:
-                    click.echo(colored("No open positions", Colors.YELLOW))
+                    click.echo(colored(f"No open positions{f' for bot {bot}' if bot else ''}", Colors.YELLOW))
                     return
 
-                click.echo(f"\n{colored('💼 Open Positions', Colors.BOLD)}")
-                click.echo(colored('=' * 80, Colors.CYAN))
+                click.echo(f"\n{colored('💼 Open Positions' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
+                click.echo(colored('=' * 100, Colors.CYAN))
 
-                headers = ['Symbol', 'Strategy', 'Entry Price', 'Quantity', 'Entry Time']
+                headers = ['Bot', 'Symbol', 'Strategy', 'Entry Price', 'Quantity', 'Entry Time']
                 rows = []
 
                 for pos in positions_list:
+                    bot_name = pos.bot_name or 'legacy'
                     rows.append([
+                        bot_name,
                         pos.symbol,
                         pos.strategy,
                         f"${float(pos.entry_price):.2f}",
@@ -442,8 +570,9 @@ def schema(table):
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def summary(watch):
+def summary(bot, watch):
     """Show quick summary of everything."""
     async def _summary():
         db = get_database()
@@ -452,25 +581,30 @@ def summary(watch):
         try:
             async with db.session_factory() as session:
                 # Count trades
-                trade_count_result = await session.execute(select(func.count(Trade.id)))
+                trade_query = select(func.count(Trade.id))
+                if bot:
+                    trade_query = trade_query.where(Trade.bot_name == bot)
+                trade_count_result = await session.execute(trade_query)
                 trade_count = trade_count_result.scalar() or 0
 
                 # Count open positions
-                open_pos_result = await session.execute(
-                    select(func.count(Position.id)).where(Position.is_open == True)
-                )
+                pos_query = select(func.count(Position.id)).where(Position.is_open == True)
+                if bot:
+                    pos_query = pos_query.where(Position.bot_name == bot)
+                open_pos_result = await session.execute(pos_query)
                 open_positions = open_pos_result.scalar() or 0
 
                 # Get health status
-                healthy_result = await session.execute(
-                    select(func.count(HealthCheck.id)).where(HealthCheck.is_healthy == True)
-                )
+                health_query = select(func.count(HealthCheck.id)).where(HealthCheck.is_healthy == True)
+                if bot:
+                    health_query = health_query.where(HealthCheck.bot_name == bot)
+                healthy_result = await session.execute(health_query)
                 healthy_checks = healthy_result.scalar() or 0
 
             # Get win rate and profit factor
-            metrics = await repo.get_performance_metrics()
+            metrics = await repo.get_performance_metrics(bot_name=bot)
 
-            click.echo(f"\n{colored('🎯 Trading Bot Summary', Colors.BOLD)}")
+            click.echo(f"\n{colored('🎯 Trading Bot Summary' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
             click.echo(colored('=' * 50, Colors.CYAN))
 
             summary_rows = [
@@ -491,12 +625,13 @@ def summary(watch):
 
 
 @cli.command()
+@click.option('--bot', '-b', default=None, help='Filter by bot name (multi-bot mode)')
 @click.option('--limit', default=50, help='Number of events to show')
 @click.option('--symbol', default=None, help='Filter by symbol')
 @click.option('--type', 'event_type', default=None, help='Filter by event type')
 @click.option('--severity', default=None, help='Filter by severity level')
 @click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
-def events(limit, symbol, event_type, severity, watch):
+def events(bot, limit, symbol, event_type, severity, watch):
     """View trading events and decisions.
 
     Shows strategy decisions, filter checks, signal generation, and order events.
@@ -509,6 +644,9 @@ def events(limit, symbol, event_type, severity, watch):
             async with db.session_factory() as session:
                 # Build query with filters
                 stmt = select(TradingEvent)
+
+                if bot:
+                    stmt = stmt.where(TradingEvent.bot_name == bot)
 
                 if symbol:
                     stmt = stmt.where(TradingEvent.symbol == symbol)
@@ -525,11 +663,11 @@ def events(limit, symbol, event_type, severity, watch):
                 events_data = result.scalars().all()
 
                 if not events_data:
-                    click.echo(colored("No events found", Colors.YELLOW))
+                    click.echo(colored(f"No events found{f' for bot {bot}' if bot else ''}", Colors.YELLOW))
                     return
 
-                click.echo(f"\n{colored('📊 Trading Events', Colors.BOLD)}")
-                click.echo(colored('=' * 100, Colors.CYAN))
+                click.echo(f"\n{colored('📊 Trading Events' + (f' - {bot}' if bot else ''), Colors.BOLD)}")
+                click.echo(colored('=' * 120, Colors.CYAN))
 
                 # Format events for display
                 rows = []
@@ -544,17 +682,19 @@ def events(limit, symbol, event_type, severity, watch):
 
                     # Format timestamp
                     ts_str = event.event_timestamp.strftime('%H:%M:%S')
+                    bot_name = event.bot_name or 'legacy'
 
                     rows.append([
                         ts_str,
+                        bot_name,
                         colored(event.symbol or '-', Colors.BLUE),
                         colored(event.strategy or '-', Colors.CYAN),
                         sev_colored,
                         event.event_type[:20],
-                        event.message[:50] + ('...' if len(event.message) > 50 else ''),
+                        event.message[:40] + ('...' if len(event.message) > 40 else ''),
                     ])
 
-                click.echo(tabulate(rows, headers=['Time', 'Symbol', 'Strategy', 'Level', 'Type', 'Message'], tablefmt='simple'))
+                click.echo(tabulate(rows, headers=['Time', 'Bot', 'Symbol', 'Strategy', 'Level', 'Type', 'Message'], tablefmt='simple'))
                 click.echo()
 
         finally:
@@ -622,6 +762,139 @@ def uptime():
     asyncio.run(_uptime())
 
 
+# ============================================================================
+# Multi-Bot Management Commands
+# ============================================================================
+
+@cli.command()
+@click.option('--watch', is_flag=True, help='Watch for updates (refresh every 2 seconds)')
+def bots(watch):
+    """List all configured bots and their status (multi-bot mode only)."""
+    async def _bots():
+        if not detect_multi_bot_mode():
+            click.echo(colored("❌ Multi-bot mode not detected. Create config/bots.yaml to enable.", Colors.RED))
+            return
+
+        try:
+            config = load_bot_configs()
+            db = get_database()
+
+            try:
+                click.echo(f"\n{colored('🤖 Multi-Bot Configuration', Colors.BOLD)}")
+                click.echo(colored('=' * 100, Colors.CYAN))
+
+                if not config.bots:
+                    click.echo(colored("No bots configured", Colors.YELLOW))
+                    return
+
+                click.echo(f"Total bots: {len(config.bots)}\n")
+
+                # Get stats for each bot
+                async with db.session_factory() as session:
+                    rows = []
+                    for bot_cfg in config.bots:
+                        # Get trade count
+                        trade_count_result = await session.execute(
+                            select(func.count(Trade.id)).where(Trade.bot_name == bot_cfg.name)
+                        )
+                        trade_count = trade_count_result.scalar() or 0
+
+                        # Get open positions
+                        open_pos_result = await session.execute(
+                            select(func.count(Position.id)).where(
+                                (Position.bot_name == bot_cfg.name) & (Position.is_open == True)
+                            )
+                        )
+                        open_positions = open_pos_result.scalar() or 0
+
+                        # Get latest health check
+                        health_result = await session.execute(
+                            select(HealthCheck)
+                            .where(HealthCheck.bot_name == bot_cfg.name)
+                            .order_by(HealthCheck.checked_at.desc())
+                            .limit(1)
+                        )
+                        latest_health = health_result.scalar_one_or_none()
+                        health_status = colored('🟢 HEALTHY', Colors.GREEN) if latest_health and latest_health.is_healthy else colored('⚠️  DEGRADED', Colors.YELLOW)
+
+                        status_indicator = colored('✅ ENABLED', Colors.GREEN) if bot_cfg.enabled else colored('⏸️  DISABLED', Colors.YELLOW)
+
+                        rows.append([
+                            bot_cfg.name,
+                            status_indicator,
+                            bot_cfg.broker.type.upper(),
+                            f"${bot_cfg.allocation.amount:.2f}",
+                            f"{trade_count}",
+                            f"{open_positions}",
+                            health_status,
+                        ])
+
+                    click.echo(tabulate(rows, headers=['Bot Name', 'Status', 'Broker', 'Allocation', 'Trades', 'Open', 'Health'], tablefmt='grid'))
+
+                click.echo()
+
+            finally:
+                await db.dispose()
+
+        except Exception as e:
+            click.echo(colored(f"❌ Error loading multi-bot config: {e}", Colors.RED))
+
+    watch_command(_bots, watch)
+
+
+@cli.command(name='bots-summary')
+def bots_summary():
+    """Show summary statistics for all bots."""
+    async def _summary():
+        if not detect_multi_bot_mode():
+            click.echo(colored("❌ Multi-bot mode not detected.", Colors.RED))
+            return
+
+        try:
+            config = load_bot_configs()
+            db = get_database()
+
+            try:
+                click.echo(f"\n{colored('📊 Multi-Bot Summary', Colors.BOLD)}")
+                click.echo(colored('=' * 60, Colors.CYAN))
+
+                repo = TradeRepository(db.session_factory)
+
+                async with db.session_factory() as session:
+                    total_trades = await session.execute(select(func.count(Trade.id)))
+                    total_open_pos = await session.execute(
+                        select(func.count(Position.id)).where(Position.is_open == True)
+                    )
+                    total_capital_allocated = sum(bot.allocation.amount for bot in config.bots if bot.enabled)
+
+                    rows = [
+                        ['Total Bots', colored(str(len(config.bots)), Colors.BLUE)],
+                        ['Enabled Bots', colored(str(sum(1 for b in config.bots if b.enabled)), Colors.GREEN)],
+                        ['Total Capital Allocated', colored(f"${total_capital_allocated:.2f}", Colors.BLUE)],
+                        ['Total Trades', colored(str(total_trades.scalar() or 0), Colors.BLUE)],
+                        ['Open Positions', colored(str(total_open_pos.scalar() or 0), Colors.BLUE)],
+                    ]
+
+                    # Get overall metrics
+                    metrics = await repo.get_performance_metrics()
+                    rows.extend([
+                        ['Overall Win Rate', colored(f"{metrics.get('win_rate', 0):.1f}%", Colors.GREEN if metrics.get('win_rate', 0) > 50 else Colors.RED)],
+                        ['Profit Factor', colored(f"{metrics.get('profit_factor', 0):.2f}", Colors.GREEN if metrics.get('profit_factor', 0) > 1.5 else Colors.YELLOW)],
+                    ])
+
+                    click.echo(tabulate(rows, tablefmt='simple'))
+                    click.echo()
+
+            finally:
+                await db.dispose()
+
+        except Exception as e:
+            click.echo(colored(f"❌ Error: {e}", Colors.RED))
+
+    asyncio.run(_summary())
+
+
+# ============================================================================
 # Broker Management Commands
 
 @cli.command(name='broker-positions')

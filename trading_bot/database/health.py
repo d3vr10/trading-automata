@@ -28,15 +28,23 @@ class HealthCheckManager:
     - Reconnection attempts with exponential backoff
     """
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], broker: str, strategy: str):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        broker: str,
+        strategy: str,
+        bot_name: Optional[str] = None,
+    ):
         """Initialize health check manager.
 
         Args:
             session_factory: Async sessionmaker factory
             broker: Broker name (alpaca, coinbase, etc.)
             strategy: Strategy being monitored
+            bot_name: Optional bot instance name (for multi-bot tracking)
         """
         self.session_factory = session_factory
+        self.bot_name = bot_name or ""
         self.broker = broker
         self.strategy = strategy
 
@@ -164,6 +172,7 @@ class HealthCheckManager:
                 health_check = HealthCheck(
                     broker=self.broker,
                     strategy=self.strategy,
+                    bot_name=self.bot_name if self.bot_name else None,
                     is_healthy=self.is_healthy,
                     last_bar_timestamp=self.last_bar_timestamp,
                     last_order_timestamp=self.last_order_timestamp,
@@ -221,34 +230,48 @@ class HealthCheckRegistry:
         self.session_factory = session_factory
         self._checks: Dict[str, HealthCheckManager] = {}
 
-    def register(self, broker: str, strategy: str) -> HealthCheckManager:
+    def register(
+        self,
+        broker: str,
+        strategy: str,
+        bot_name: Optional[str] = None,
+    ) -> HealthCheckManager:
         """Register a health check for a broker/strategy combination.
 
         Args:
             broker: Broker name
             strategy: Strategy name
+            bot_name: Optional bot instance name (for multi-bot tracking)
 
         Returns:
             HealthCheckManager instance
         """
-        key = f"{broker}:{strategy}"
+        key = f"{bot_name or ''}:{broker}:{strategy}"
         if key not in self._checks:
-            self._checks[key] = HealthCheckManager(self.session_factory, broker, strategy)
+            self._checks[key] = HealthCheckManager(
+                self.session_factory, broker, strategy, bot_name
+            )
             logger.info(f"Registered health check for {key}")
 
         return self._checks[key]
 
-    def get(self, broker: str, strategy: str) -> Optional[HealthCheckManager]:
+    def get(
+        self,
+        broker: str,
+        strategy: str,
+        bot_name: Optional[str] = None,
+    ) -> Optional[HealthCheckManager]:
         """Get health check for a broker/strategy combination.
 
         Args:
             broker: Broker name
             strategy: Strategy name
+            bot_name: Optional bot instance name (for multi-bot tracking)
 
         Returns:
             HealthCheckManager if registered, None otherwise.
         """
-        key = f"{broker}:{strategy}"
+        key = f"{bot_name or ''}:{broker}:{strategy}"
         return self._checks.get(key)
 
     async def save_all(self) -> None:

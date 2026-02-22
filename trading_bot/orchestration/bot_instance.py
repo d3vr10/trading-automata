@@ -271,9 +271,17 @@ class BotInstance:
 
     async def _process_bar(self, bar: Bar) -> None:
         """Process a bar through all strategies."""
-        self.event_logger.log_bar_received(
+        await self.event_logger.log_bar_received(
             symbol=bar.symbol,
-            bar=bar,
+            strategy="",
+            broker=self.config.broker.type,
+            details={
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": int(bar.volume) if bar.volume else 0,
+            },
             bot_name=self.bot_name,
         )
 
@@ -285,11 +293,14 @@ class BotInstance:
             try:
                 signal = strategy.on_bar(bar)
                 if signal:
-                    self.event_logger.log_signal_generated(
-                        strategy=strategy.name,
+                    await self.event_logger.log_signal_generated(
                         symbol=signal.symbol,
+                        strategy=strategy.name,
+                        broker=self.config.broker.type,
                         action=signal.action,
-                        quantity=signal.quantity,
+                        quantity=float(signal.quantity),
+                        confidence=float(signal.confidence) if signal.confidence else 0.5,
+                        details=signal.metadata or {},
                         bot_name=self.bot_name,
                     )
 
