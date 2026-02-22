@@ -21,6 +21,9 @@ yfinance>=0.2.0
 # Technical Analysis
 pandas-ta>=0.3.14
 
+# Charting
+matplotlib>=3.7.0
+
 # Async support
 aiohttp>=3.9.0
 websockets>=12.0

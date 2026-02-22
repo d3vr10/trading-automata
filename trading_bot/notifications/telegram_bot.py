@@ -26,6 +26,7 @@ from sqlalchemy import select, func, and_
 from trading_bot.database.models import DatabaseConnection, BotSession, Trade, Position, HealthCheck
 from trading_bot.database.repository import TradeRepository
 from trading_bot.brokers.base import IBroker
+from trading_bot.utils.chart_generator import ChartGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -625,7 +626,7 @@ class TradingBotTelegram:
                 await update.message.reply_text(f"❌ Error retrieving trades: {str(e)}")
 
     async def _cmd_metrics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /metrics command."""
+        """Handle /metrics command with charts."""
         if not await self._check_authorized(update):
             return
 
@@ -637,12 +638,12 @@ class TradingBotTelegram:
                     max_overflow=self.max_overflow,
                 )
 
-            message = "📊 <b>Performance Metrics</b>\n\n"
-
             if not self.database:
-                message += "<i>Database not configured</i>"
-                await update.message.reply_html(message)
+                await update.message.reply_text("❌ Database not configured")
                 return
+
+            # Show "generating charts" message
+            await update.message.reply_text("📊 Generating performance charts...")
 
             async with self.database.session_factory() as session:
                 # Get all closed trades
@@ -656,11 +657,34 @@ class TradingBotTelegram:
                 open_trades = result.scalars().all()
 
             if not all_trades and not open_trades:
-                message += "<i>No trades yet</i>"
-                await update.message.reply_html(message)
+                await update.message.reply_text("ℹ️ No trades yet")
                 return
 
-            # Calculate metrics for closed trades
+            # Generate P&L chart
+            pnl_image, pnl_metrics = ChartGenerator.generate_pnl_chart(all_trades)
+
+            # Generate performance summary chart
+            perf_image = ChartGenerator.generate_performance_chart(all_trades, open_trades)
+
+            # Send P&L chart
+            if pnl_image:
+                await update.message.reply_photo(
+                    photo=pnl_image,
+                    caption="📈 <b>P&L Over Time</b>",
+                    parse_mode="HTML"
+                )
+
+            # Send performance summary chart
+            if perf_image:
+                await update.message.reply_photo(
+                    photo=perf_image,
+                    caption="📊 <b>Performance Summary</b>",
+                    parse_mode="HTML"
+                )
+
+            # Send text summary
+            message = "📋 <b>Trade Summary</b>\n\n"
+
             if all_trades:
                 total_trades = len(all_trades)
                 winning_trades = sum(1 for t in all_trades if t.is_winning_trade)
@@ -672,25 +696,22 @@ class TradingBotTelegram:
                 profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
                 total_pnl = gross_profit - gross_loss
 
-                message += f"<b>✅ Closed Trades</b>\n"
-                message += f"  Total: {total_trades} (✅ {winning_trades} / ❌ {losing_trades})\n"
-                message += f"  Win Rate: {win_rate:.1f}%\n"
-                message += f"  Gross Profit: ${gross_profit:,.2f}\n"
-                message += f"  Gross Loss: -${gross_loss:,.2f}\n"
-                message += f"  Net P&L: ${total_pnl:,.2f}\n"
-                message += f"  Profit Factor: {profit_factor:.2f}\n\n"
+                message += f"<b>Closed Trades:</b> {total_trades}\n"
+                message += f"<b>Wins/Losses:</b> ✅ {winning_trades} / ❌ {losing_trades}\n"
+                message += f"<b>Win Rate:</b> {win_rate:.1f}%\n"
+                message += f"<b>Profit Factor:</b> {profit_factor:.2f if profit_factor != float('inf') else '∞'}\n"
+                message += f"<b>Gross Profit:</b> ${gross_profit:,.2f}\n"
+                message += f"<b>Gross Loss:</b> -${gross_loss:,.2f}\n"
+                message += f"<b>Net P&L:</b> ${total_pnl:,.2f}\n"
+
+                if pnl_metrics:
+                    message += f"\n<b>Drawdown:</b> ${pnl_metrics.get('max_drawdown', 0):,.2f}\n"
 
             # Show open trades info
+            message += f"\n<b>Open Positions:</b> {len(open_trades)}\n"
             if open_trades:
-                message += f"<b>📈 Open Trades ({len(open_trades)})</b>\n"
                 total_entry_cost = sum(float(t.entry_price * t.entry_quantity or 0) for t in open_trades)
-                message += f"  Total Entry Cost: ${total_entry_cost:,.2f}\n"
-                for trade in open_trades[:5]:  # Show first 5
-                    message += f"  • {trade.symbol}: {float(trade.entry_quantity)} @ ${float(trade.entry_price):.2f}\n"
-                if len(open_trades) > 5:
-                    message += f"  ... and {len(open_trades) - 5} more\n"
-            else:
-                message += f"<b>No Open Positions</b>\n"
+                message += f"<b>Total Entry Cost:</b> ${total_entry_cost:,.2f}\n"
 
             # Per-strategy breakdown
             strategies = {}
@@ -963,7 +984,7 @@ No bot session found - bot may not have started yet.
             await update.message.reply_text(f"❌ Error: {str(e)}")
 
     async def _cmd_broker_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /broker_orders command."""
+        """Handle /broker_orders [SYMBOL] [STATUS] command with pagination."""
         if not await self._check_authorized(update):
             return
 
@@ -972,6 +993,11 @@ No bot session found - bot may not have started yet.
             return
 
         try:
+            # Parse pagination page (stored in context)
+            page = 1
+            if hasattr(context, 'user_data') and 'orders_page' in context.user_data:
+                page = context.user_data['orders_page']
+
             # Parse optional symbol and status filters
             symbol_filter = None
             status_filter = None
@@ -980,11 +1006,13 @@ No bot session found - bot may not have started yet.
                 for arg in context.args:
                     if arg.upper() in ('OPEN', 'CLOSED', 'PENDING', 'CANCELLED'):
                         status_filter = arg.lower()
+                    elif arg.isdigit():
+                        page = int(arg)
                     else:
                         symbol_filter = arg.upper()
 
             all_orders = self.broker.get_orders(status=status_filter)
-            all_orders = all_orders[:50]  # Fetch up to 50 from broker
+            all_orders = all_orders[:100]  # Fetch up to 100 from broker
 
             if symbol_filter:
                 all_orders = [o for o in all_orders if o.get('symbol', '').upper().startswith(symbol_filter)]
@@ -994,14 +1022,23 @@ No bot session found - bot may not have started yet.
                 await update.message.reply_html(message)
                 return
 
-            # Show only first 10 to avoid message length limit (Telegram: 4096 chars max)
-            orders = all_orders[:10]
+            # Pagination
+            items_per_page = 10
             total_orders = len(all_orders)
+            total_pages = (total_orders + items_per_page - 1) // items_per_page
+
+            # Ensure page is within bounds
+            page = max(1, min(page, total_pages))
+
+            # Calculate slice indices
+            start_idx = (page - 1) * items_per_page
+            end_idx = start_idx + items_per_page
+            orders = all_orders[start_idx:end_idx]
 
             message = f"📋 <b>Open Orders</b>\n"
-            message += f"(Showing {len(orders)} of {total_orders})\n\n"
+            message += f"(Page {page}/{total_pages} • Showing {len(orders)} of {total_orders})\n\n"
 
-            for i, order in enumerate(orders, 1):
+            for i, order in enumerate(orders, start_idx + 1):
                 order_id = str(order.get('id', 'N/A'))[:8]
                 symbol = order.get('symbol', 'N/A')
                 side = order.get('side', 'N/A').upper()
@@ -1018,10 +1055,44 @@ No bot session found - bot may not have started yet.
                 message += f"   Status: {status}\n"
                 message += f"   Created: {created_at}\n\n"
 
-            if total_orders > 10:
-                message += f"<i>... and {total_orders - 10} more orders (use filters to narrow down)</i>"
+            # Build pagination buttons
+            keyboard = []
+            nav_buttons = []
 
-            await update.message.reply_html(message)
+            if page > 1:
+                nav_buttons.append(
+                    InlineKeyboardButton("⬅️ Prev", callback_data=f"orders_page:{page - 1}")
+                )
+
+            nav_buttons.append(
+                InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="cancel")
+            )
+
+            if page < total_pages:
+                nav_buttons.append(
+                    InlineKeyboardButton("Next ➡️", callback_data=f"orders_page:{page + 1}")
+                )
+
+            if nav_buttons:
+                keyboard.append(nav_buttons)
+
+            # Add filter help
+            if symbol_filter or status_filter:
+                keyboard.append([
+                    InlineKeyboardButton("🔄 Clear Filters", callback_data="orders_reset")
+                ])
+
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+
+            # Determine if using callback query or regular message
+            if update.callback_query:
+                await update.callback_query.edit_message_text(
+                    message,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_html(message, reply_markup=reply_markup)
 
         except Exception as e:
             logger.error(f"Error in /broker_orders: {e}")
@@ -1555,6 +1626,22 @@ No bot session found - bot may not have started yet.
                     message += f"\n⚠️ {len(orders_to_cancel) - len(cancelled_ids)} orders failed to cancel"
                 await query.edit_message_text(message)
                 logger.info(f"Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}' via Telegram")
+                return
+
+            # Handle orders pagination
+            if action.startswith("orders_page:"):
+                page = int(action.split(":")[1])
+                context.user_data = context.user_data or {}
+                context.user_data['orders_page'] = page
+                await self._cmd_broker_orders(update, context)
+                return
+
+            # Handle orders reset filters
+            if action == "orders_reset":
+                context.args = []
+                context.user_data = context.user_data or {}
+                context.user_data['orders_page'] = 1
+                await self._cmd_broker_orders(update, context)
                 return
 
             # Handle cancel
