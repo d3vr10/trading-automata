@@ -1306,7 +1306,7 @@ No bot session found - bot may not have started yet.
     async def _cmd_close_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /close_strategy STRATEGY_NAME command.
 
-        Closes all positions opened by a specific strategy.
+        Closes selected positions opened by a specific strategy with multi-select UI.
         """
         if not await self._check_authorized(update):
             return
@@ -1346,43 +1346,78 @@ No bot session found - bot may not have started yet.
                 await update.message.reply_text(f"ℹ️ No open positions in broker for strategy: {strategy_name}")
                 return
 
-            # Show positions and ask for confirmation
-            message = f"⚠️ <b>Close Strategy Positions - Confirm?</b>\n\n"
-            message += f"<b>Strategy:</b> {strategy_name}\n"
-            message += f"<b>Total Positions:</b> {len(positions_to_close)}\n\n"
+            # Initialize selected indices (all selected by default)
+            selected_indices = set(range(len(positions_to_close)))
 
-            total_pnl = 0
-            for i, pos in enumerate(positions_to_close, 1):
-                broker_pos = broker_positions.get(pos.symbol, {})
-                qty = float(broker_pos.get('qty', 0))
-                pnl = float(broker_pos.get('unrealized_pl', 0))
-                total_pnl += pnl
-
-                pnl_color = "🟢" if pnl >= 0 else "🔴"
-                message += f"{i}. <b>{pos.symbol}</b> (Qty: {qty}) {pnl_color} ${pnl:,.2f}\n"
-
-            pnl_color = "🟢" if total_pnl >= 0 else "🔴"
-            message += f"\n<b>Total P&L:</b> {pnl_color} ${total_pnl:,.2f}\n\n"
-            message += "Are you sure you want to close ALL positions from this strategy?"
-
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Close All", callback_data=f"close_strat:{strategy_name}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await update.message.reply_html(message, reply_markup=reply_markup)
+            # Build UI with multi-select
+            await self._show_close_strategy_ui(update, strategy_name, positions_to_close, broker_positions, selected_indices)
 
         except Exception as e:
             logger.error(f"Error in /close_strategy: {e}")
             await update.message.reply_text(f"❌ Error: {str(e)}")
 
+    async def _show_close_strategy_ui(self, update: Update, strategy_name: str, positions: list, broker_positions: dict, selected_indices: set):
+        """Display multi-select UI for closing strategy positions."""
+        # Build message with position list
+        message = f"🔒 <b>Close Strategy Positions</b>\n\n"
+        message += f"<b>Strategy:</b> {strategy_name}\n"
+        message += f"<b>Selected:</b> {len(selected_indices)}/{len(positions)}\n\n"
+
+        total_pnl = 0
+        for i, pos in enumerate(positions):
+            broker_pos = broker_positions.get(pos.symbol, {})
+            qty = float(broker_pos.get('qty', 0))
+            pnl = float(broker_pos.get('unrealized_pl', 0))
+            total_pnl += pnl
+
+            is_selected = i in selected_indices
+            checkbox = "✅" if is_selected else "❌"
+            pnl_color = "🟢" if pnl >= 0 else "🔴"
+
+            message += f"{checkbox} <b>{pos.symbol}</b> (Qty: {qty}) {pnl_color} ${pnl:,.2f}\n"
+
+        pnl_color = "🟢" if total_pnl >= 0 else "🔴"
+        message += f"\n<b>Total P&L:</b> {pnl_color} ${total_pnl:,.2f}\n"
+        message += f"<i>Click positions to toggle selection</i>"
+
+        # Build keyboard with toggle buttons and action buttons
+        keyboard = []
+
+        # Position toggle buttons (2 per row)
+        for i in range(0, len(positions), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(positions):
+                    pos = positions[i + j]
+                    is_selected = (i + j) in selected_indices
+                    checkbox = "✅" if is_selected else "❌"
+                    selected_str = ",".join(str(x) for x in sorted(selected_indices))
+                    row.append(
+                        InlineKeyboardButton(f"{checkbox} {pos.symbol}", callback_data=f"toggle_close_pos:{strategy_name}:{i+j}:{selected_str}")
+                    )
+            if row:
+                keyboard.append(row)
+
+        # Action buttons
+        selected_count = len(selected_indices)
+        action_row = [
+            InlineKeyboardButton(f"🔒 Close ({selected_count})", callback_data=f"close_strat_confirm:{strategy_name}:{','.join(str(x) for x in sorted(selected_indices))}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+        ]
+        keyboard.append(action_row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Send or update message
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, parse_mode="HTML", reply_markup=reply_markup)
+        else:
+            await update.message.reply_html(message, reply_markup=reply_markup)
+
     async def _cmd_cancel_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /cancel_strategy STRATEGY_NAME command.
 
-        Cancels all pending orders for a specific strategy's symbols.
+        Cancels selected orders for a specific strategy with multi-select UI.
         """
         if not await self._check_authorized(update):
             return
@@ -1423,38 +1458,71 @@ No bot session found - bot may not have started yet.
                 await update.message.reply_text(f"ℹ️ No open orders for strategy: {strategy_name}")
                 return
 
-            # Show orders to be cancelled and ask for confirmation
-            message = f"⚠️ <b>Cancel Strategy Orders - Confirm?</b>\n\n"
-            message += f"<b>Strategy:</b> {strategy_name}\n"
-            message += f"<b>Total Orders:</b> {len(orders_to_cancel)}\n"
-            message += f"<b>Symbols:</b> {', '.join(sorted(strategy_symbols))}\n\n"
+            # Initialize selected indices (all selected by default)
+            selected_indices = set(range(len(orders_to_cancel)))
 
-            for i, order in enumerate(orders_to_cancel[:10], 1):  # Show first 10
-                symbol = order.get('symbol', 'N/A')
-                side = order.get('side', 'N/A').upper()
-                side_emoji = "📈" if side == "BUY" else "📉"
-                qty = float(order.get('qty', 0))
-
-                message += f"{i}. {side_emoji} <b>{symbol}</b> {side} {qty}\n"
-
-            if len(orders_to_cancel) > 10:
-                message += f"... and {len(orders_to_cancel) - 10} more\n"
-
-            message += f"\nAre you sure you want to cancel ALL orders for this strategy?"
-
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Cancel All", callback_data=f"cancel_strat:{strategy_name}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await update.message.reply_html(message, reply_markup=reply_markup)
+            # Build UI with multi-select
+            await self._show_cancel_strategy_ui(update, strategy_name, orders_to_cancel, selected_indices)
 
         except Exception as e:
             logger.error(f"Error in /cancel_strategy: {e}")
             await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def _show_cancel_strategy_ui(self, update: Update, strategy_name: str, orders: list, selected_indices: set):
+        """Display multi-select UI for cancelling strategy orders."""
+        # Build message with order list
+        message = f"❌ <b>Cancel Strategy Orders</b>\n\n"
+        message += f"<b>Strategy:</b> {strategy_name}\n"
+        message += f"<b>Selected:</b> {len(selected_indices)}/{len(orders)}\n\n"
+
+        for i, order in enumerate(orders):
+            is_selected = i in selected_indices
+            checkbox = "✅" if is_selected else "❌"
+            symbol = order.get('symbol', 'N/A')
+            side = order.get('side', 'N/A').upper()
+            side_emoji = "📈" if side == "BUY" else "📉"
+            qty = float(order.get('qty', 0))
+
+            message += f"{checkbox} {side_emoji} <b>{symbol}</b> {side} {qty}\n"
+
+        message += f"\n<i>Click orders to toggle selection</i>"
+
+        # Build keyboard with toggle buttons and action buttons
+        keyboard = []
+
+        # Order toggle buttons (2 per row for better UX)
+        for i in range(0, len(orders), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(orders):
+                    order = orders[i + j]
+                    is_selected = (i + j) in selected_indices
+                    checkbox = "✅" if is_selected else "❌"
+                    symbol = order.get('symbol', 'N/A')
+                    side = order.get('side', 'N/A').upper()
+                    side_emoji = "📈" if side == "BUY" else "📉"
+                    selected_str = ",".join(str(x) for x in sorted(selected_indices))
+                    row.append(
+                        InlineKeyboardButton(f"{checkbox} {side_emoji}{symbol}", callback_data=f"toggle_cancel_ord:{strategy_name}:{i+j}:{selected_str}")
+                    )
+            if row:
+                keyboard.append(row)
+
+        # Action buttons
+        selected_count = len(selected_indices)
+        action_row = [
+            InlineKeyboardButton(f"❌ Cancel ({selected_count})", callback_data=f"cancel_strat_confirm:{strategy_name}:{','.join(str(x) for x in sorted(selected_indices))}"),
+            InlineKeyboardButton("🚫 Abort", callback_data="cancel"),
+        ]
+        keyboard.append(action_row)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Send or update message
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, parse_mode="HTML", reply_markup=reply_markup)
+        else:
+            await update.message.reply_html(message, reply_markup=reply_markup)
 
     async def _handle_trades_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /trades button callbacks for quick filtering."""
@@ -1555,11 +1623,20 @@ No bot session found - bot may not have started yet.
                     await query.edit_message_text("ℹ️ No orders were cancelled")
                 return
 
-            # Handle close strategy positions
-            if action.startswith("close_strat:"):
-                strategy_name = action.split(":", 1)[1]
+            # Handle toggle close strategy position
+            if action.startswith("toggle_close_pos:"):
+                parts = action.split(":")
+                strategy_name = parts[1]
+                position_idx = int(parts[2])
+                current_selected = set(int(x) for x in parts[3].split(",") if x)
 
-                # Get all open positions for this strategy from database
+                # Toggle the position
+                if position_idx in current_selected:
+                    current_selected.discard(position_idx)
+                else:
+                    current_selected.add(position_idx)
+
+                # Rebuild the UI with updated selection
                 try:
                     async with self.database.get_session() as session:
                         positions_query = select(Position).where(
@@ -1567,34 +1644,22 @@ No bot session found - bot may not have started yet.
                         )
                         result = await session.execute(positions_query)
                         db_positions = result.scalars().all()
+
+                    broker_positions = {p.get('symbol'): p for p in self.broker.get_positions()}
+                    positions_to_close = [p for p in db_positions if p.symbol in broker_positions]
+
+                    await self._show_close_strategy_ui(update, strategy_name, positions_to_close, broker_positions, current_selected)
                 except Exception as e:
-                    await query.edit_message_text(f"❌ Database error: {str(e)}")
-                    return
-
-                # Get current positions from broker
-                broker_positions = {p.get('symbol'): p for p in self.broker.get_positions()}
-                closed_count = 0
-                failed_symbols = []
-
-                for pos in db_positions:
-                    if pos.symbol in broker_positions:
-                        if self.broker.close_position(pos.symbol):
-                            closed_count += 1
-                        else:
-                            failed_symbols.append(pos.symbol)
-
-                message = f"✅ Closed {closed_count} positions from strategy '{strategy_name}'"
-                if failed_symbols:
-                    message += f"\n❌ Failed: {', '.join(failed_symbols)}"
-                await query.edit_message_text(message)
-                logger.info(f"Closed {closed_count} positions from strategy '{strategy_name}' via Telegram")
+                    await query.edit_message_text(f"❌ Error: {str(e)}")
                 return
 
-            # Handle cancel strategy orders
-            if action.startswith("cancel_strat:"):
-                strategy_name = action.split(":", 1)[1]
+            # Handle confirm close strategy positions
+            if action.startswith("close_strat_confirm:"):
+                parts = action.split(":")
+                strategy_name = parts[1]
+                selected_indices = set(int(x) for x in parts[2].split(",") if x) if parts[2] else set()
 
-                # Get symbols for this strategy from database
+                # Get positions and close selected ones
                 try:
                     async with self.database.get_session() as session:
                         positions_query = select(Position).where(
@@ -1602,30 +1667,102 @@ No bot session found - bot may not have started yet.
                         )
                         result = await session.execute(positions_query)
                         db_positions = result.scalars().all()
+
+                    broker_positions = {p.get('symbol'): p for p in self.broker.get_positions()}
+                    positions_to_close = [p for p in db_positions if p.symbol in broker_positions]
+
+                    closed_count = 0
+                    failed_symbols = []
+
+                    for idx in selected_indices:
+                        if idx < len(positions_to_close):
+                            pos = positions_to_close[idx]
+                            if self.broker.close_position(pos.symbol):
+                                closed_count += 1
+                            else:
+                                failed_symbols.append(pos.symbol)
+
+                    message = f"✅ Closed {closed_count} position(s) from strategy '{strategy_name}'"
+                    if failed_symbols:
+                        message += f"\n❌ Failed: {', '.join(failed_symbols)}"
+                    await query.edit_message_text(message)
+                    logger.info(f"Closed {closed_count} positions from strategy '{strategy_name}' via Telegram")
                 except Exception as e:
-                    await query.edit_message_text(f"❌ Database error: {str(e)}")
-                    return
+                    await query.edit_message_text(f"❌ Error: {str(e)}")
+                return
 
-                strategy_symbols = set(pos.symbol for pos in db_positions)
+            # Handle toggle cancel strategy order
+            if action.startswith("toggle_cancel_ord:"):
+                parts = action.split(":")
+                strategy_name = parts[1]
+                order_idx = int(parts[2])
+                current_selected = set(int(x) for x in parts[3].split(",") if x)
 
-                # Get all open orders and filter by strategy symbols
-                all_orders = self.broker.get_orders(status='open', limit=100)
-                orders_to_cancel = [o for o in all_orders if o.get('symbol', '').upper() in strategy_symbols]
+                # Toggle the order
+                if order_idx in current_selected:
+                    current_selected.discard(order_idx)
+                else:
+                    current_selected.add(order_idx)
 
-                # Cancel the orders
-                cancelled_ids = []
-                for order in orders_to_cancel:
-                    try:
-                        if self.broker.cancel_order(order.get('id')):
-                            cancelled_ids.append(order.get('id'))
-                    except Exception as e:
-                        logger.warning(f"Failed to cancel order {order.get('id')}: {e}")
+                # Rebuild the UI with updated selection
+                try:
+                    async with self.database.get_session() as session:
+                        positions_query = select(Position).where(
+                            and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                        )
+                        result = await session.execute(positions_query)
+                        db_positions = result.scalars().all()
 
-                message = f"✅ Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}'"
-                if len(orders_to_cancel) > len(cancelled_ids):
-                    message += f"\n⚠️ {len(orders_to_cancel) - len(cancelled_ids)} orders failed to cancel"
-                await query.edit_message_text(message)
-                logger.info(f"Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}' via Telegram")
+                    strategy_symbols = set(pos.symbol for pos in db_positions)
+                    all_orders = self.broker.get_orders(status='open', limit=100)
+                    orders_to_cancel = [o for o in all_orders if o.get('symbol', '').upper() in strategy_symbols]
+
+                    await self._show_cancel_strategy_ui(update, strategy_name, orders_to_cancel, current_selected)
+                except Exception as e:
+                    await query.edit_message_text(f"❌ Error: {str(e)}")
+                return
+
+            # Handle confirm cancel strategy orders
+            if action.startswith("cancel_strat_confirm:"):
+                parts = action.split(":")
+                strategy_name = parts[1]
+                selected_indices = set(int(x) for x in parts[2].split(",") if x) if parts[2] else set()
+
+                # Get orders and cancel selected ones
+                try:
+                    async with self.database.get_session() as session:
+                        positions_query = select(Position).where(
+                            and_(Position.strategy.ilike(f"%{strategy_name}%"), Position.open == True)
+                        )
+                        result = await session.execute(positions_query)
+                        db_positions = result.scalars().all()
+
+                    strategy_symbols = set(pos.symbol for pos in db_positions)
+                    all_orders = self.broker.get_orders(status='open', limit=100)
+                    orders_to_cancel = [o for o in all_orders if o.get('symbol', '').upper() in strategy_symbols]
+
+                    cancelled_ids = []
+                    failed_count = 0
+
+                    for idx in selected_indices:
+                        if idx < len(orders_to_cancel):
+                            order = orders_to_cancel[idx]
+                            try:
+                                if self.broker.cancel_order(order.get('id')):
+                                    cancelled_ids.append(order.get('id'))
+                                else:
+                                    failed_count += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to cancel order {order.get('id')}: {e}")
+                                failed_count += 1
+
+                    message = f"✅ Cancelled {len(cancelled_ids)} order(s) from strategy '{strategy_name}'"
+                    if failed_count > 0:
+                        message += f"\n⚠️ {failed_count} order(s) failed to cancel"
+                    await query.edit_message_text(message)
+                    logger.info(f"Cancelled {len(cancelled_ids)} orders from strategy '{strategy_name}' via Telegram")
+                except Exception as e:
+                    await query.edit_message_text(f"❌ Error: {str(e)}")
                 return
 
             # Handle orders pagination
