@@ -22,8 +22,8 @@ yfinance>=0.2.0
 pandas-ta>=0.3.14
 
 # Charting
-plotly>=5.0.0             # Interactive visualization library
-kaleido>=0.2.0            # Static image export for Plotly
+plotly>=5.18.0            # Interactive visualization library (latest with ES6 + esbuild)
+kaleido>=1.2.0            # Static image export for Plotly (latest stable)
 
 # Async support
 aiohttp>=3.9.0
