@@ -111,12 +111,19 @@ class BotInstance:
             # Create broker
             logger.debug(f"[{self.bot_name}] Creating {self.config.broker.type} broker...")
             environment = Environment(self.config.broker.environment)
+
+            # Build broker config dictionary
+            broker_config = {
+                'api_key': self.config.broker.api_key,
+                'secret_key': self.config.broker.secret_key,
+            }
+            if self.config.broker.passphrase:
+                broker_config['passphrase'] = self.config.broker.passphrase
+
             self.broker = BrokerFactory.create_broker(
                 broker_type=self.config.broker.type,
-                api_key=self.config.broker.api_key,
-                secret_key=self.config.broker.secret_key,
-                passphrase=self.config.broker.passphrase,
                 environment=environment,
+                config=broker_config,
             )
 
             if not self.broker.connect():
