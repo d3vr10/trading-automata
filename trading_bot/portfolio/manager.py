@@ -23,6 +23,7 @@ class PortfolioManager:
         order_manager: OrderManager,
         max_position_size: Decimal = Decimal('0.1'),
         max_portfolio_risk: Decimal = Decimal('0.02'),
+        logger: Optional[logging.Logger] = None,
     ):
         """Initialize portfolio manager.
 
@@ -31,11 +32,13 @@ class PortfolioManager:
             order_manager: Order manager instance
             max_position_size: Max position as % of portfolio (default 10%)
             max_portfolio_risk: Max risk as % of portfolio (default 2%)
+            logger: Optional logger instance (if provided, logs will use this logger)
         """
         self.broker = broker
         self.order_manager = order_manager
         self.max_position_size = max_position_size
         self.max_portfolio_risk = max_portfolio_risk
+        self.logger = logger or logging.getLogger(__name__)
         self._positions_cache = None
         self._account_cache = None
 
@@ -47,9 +50,9 @@ class PortfolioManager:
         try:
             self._account_cache = self.broker.get_account()
             self._positions_cache = self.broker.get_positions()
-            logger.debug("Portfolio state refreshed")
+            self.logger.debug("Portfolio state refreshed")
         except Exception as e:
-            logger.error(f"Failed to refresh portfolio state: {e}")
+            self.logger.error(f"Failed to refresh portfolio state: {e}")
 
     def get_account_info(self) -> Dict[str, Any]:
         """Get current account information.
@@ -132,7 +135,7 @@ class PortfolioManager:
         if position_value > max_position_value:
             # Scale down quantity
             adjusted_qty = (max_position_value / signal.metadata.get('price', Decimal('1')))
-            logger.warning(
+            self.logger.warning(
                 f"Position size {signal.quantity} for {signal.symbol} exceeds "
                 f"max {self.max_position_size * 100}% of portfolio. "
                 f"Reducing to {adjusted_qty}"
@@ -159,7 +162,7 @@ class PortfolioManager:
             estimated_cost = signal.quantity * signal.metadata.get('price', Decimal('1'))
 
             if estimated_cost > buying_power:
-                logger.warning(
+                self.logger.warning(
                     f"Insufficient buying power for {signal}: "
                     f"need {estimated_cost}, have {buying_power}"
                 )
@@ -170,11 +173,11 @@ class PortfolioManager:
         elif signal.action == 'sell':
             position = self.get_position(signal.symbol)
             if position is None:
-                logger.warning(f"No position to sell for {signal.symbol}")
+                self.logger.warning(f"No position to sell for {signal.symbol}")
                 return False
 
             if Decimal(str(position['qty'])) < signal.quantity:
-                logger.warning(
+                self.logger.warning(
                     f"Insufficient position for sell: "
                     f"have {position['qty']}, want to sell {signal.quantity}"
                 )
@@ -194,7 +197,7 @@ class PortfolioManager:
             Order ID if executed, None otherwise.
         """
         if not self.can_execute_signal(signal):
-            logger.info(f"Signal validation failed: {signal}")
+            self.logger.info(f"Signal validation failed: {signal}")
             return None
 
         # Adjust quantity if needed

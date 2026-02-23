@@ -61,11 +61,13 @@ class VirtualPortfolioManager:
         self.virtual_proceeds = Decimal("0")  # Sum of sell proceeds
 
         # Delegate real portfolio operations to existing PortfolioManager
+        # Pass logger so PortfolioManager logs include bot context
         self._real_pm = PortfolioManager(
             broker=broker,
             order_manager=order_manager,
             max_position_size=Decimal(str(risk.max_position_size)),
             max_portfolio_risk=Decimal(str(risk.max_portfolio_risk)),
+            logger=self.logger,
         )
 
         self.logger.info(
