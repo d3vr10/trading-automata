@@ -2,7 +2,7 @@
 
 ## Overview
 
-The trading bot now has full database integration with PostgreSQL for persistent trade storage and health monitoring. This document explains how the system works and how to use it.
+The TradingAutomata platform now has full database integration with PostgreSQL for persistent trade storage and health monitoring. This document explains how the system works and how to use it.
 
 ## Architecture
 
@@ -96,7 +96,7 @@ When the bot stops:
 
 ```env
 # Database connection
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # Connection pool size
 DATABASE_POOL_SIZE=10
@@ -107,7 +107,7 @@ DATABASE_MAX_OVERFLOW=20
 
 ```yaml
 app:
-  database_url: postgresql://postgres:postgres@localhost:5432/trading_bot
+  database_url: postgresql://postgres:postgres@localhost:5432/trading-automata
   database_pool_size: 10
   database_max_overflow: 20
 ```
@@ -175,7 +175,7 @@ registry.log_all_status()
 
 ```bash
 # Connect to database
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # View recent trades
 SELECT symbol, entry_price, exit_price, pnl_percent, strategy
@@ -252,19 +252,19 @@ coinbase:buy_and_hold: 🔴 UNHEALTHY | errors: 5 | reconnects: 2/5
 ### Check Database Size
 
 ```bash
-psql -U postgres -d trading_bot -c "SELECT pg_size_pretty(pg_database_size('trading_bot'));"
+psql -U postgres -d trading-automata -c "SELECT pg_size_pretty(pg_database_size('trading-automata'));"
 ```
 
 ### Backup Database
 
 ```bash
-pg_dump -U postgres trading_bot > backup_$(date +%Y%m%d).sql
+pg_dump -U postgres trading-automata > backup_$(date +%Y%m%d).sql
 ```
 
 ### Restore Database
 
 ```bash
-psql -U postgres trading_bot < backup_20260215.sql
+psql -U postgres trading-automata < backup_20260215.sql
 ```
 
 ### Archive Old Trades
@@ -288,7 +288,7 @@ Logger: Error: Failed to connect to database: connection refused
 
 Check:
 1. PostgreSQL is running: psql -U postgres
-2. Database exists: psql -l | grep trading_bot
+2. Database exists: psql -l | grep trading-automata
 3. DATABASE_URL is correct: echo $DATABASE_URL
 4. Credentials are valid
 ```
@@ -367,7 +367,7 @@ Build REST API on top of database:
 
 ```python
 from fastapi import FastAPI
-from trading_bot.database import TradeRepository
+from trading_automata.database import TradeRepository
 
 app = FastAPI()
 

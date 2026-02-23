@@ -18,7 +18,7 @@ if [ ! -d "/app/data/cache" ] || [ -z "$(ls -A /app/data/cache)" ]; then
 
     # Use timeout command to prevent indefinite hangs if Alpaca is unreachable
     # Continue with bot startup even if cache download fails - it will use live data
-    if timeout 45 python -m trading_bot.utils.data_cache refresh SPY QQQ 2>/dev/null; then
+    if timeout 45 python -m trading_automata.utils.data_cache refresh SPY QQQ 2>/dev/null; then
         echo "✅ Cache initialized successfully"
     else
         cache_result=$?
@@ -36,4 +36,4 @@ fi
 # Start the bot
 echo ""
 echo "▶️  Starting trading bot..."
-exec python -m trading_bot.main
+exec python -m trading_automata.main

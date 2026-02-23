@@ -2,7 +2,7 @@
 
 ## Overview
 
-Filters prevent the trading bot from trading in unsuitable market conditions. They act as **pre-checks** that run **before** the strategy generates trading signals.
+Filters prevent the TradingAutomata platform from trading in unsuitable market conditions. They act as **pre-checks** that run **before** the strategy generates trading signals.
 
 This implements best practices #2 (volatility bounds) and #3 (liquidity requirements).
 
@@ -262,7 +262,7 @@ Each strategy tracks:
 
 View with:
 ```bash
-grep "bars_analyzed\|bars_filtered" logs/trading_bot.log
+grep "bars_analyzed\|bars_filtered" logs/trading-automata.log
 ```
 
 ## Best Practices
@@ -287,13 +287,13 @@ grep "bars_analyzed\|bars_filtered" logs/trading_bot.log
 **Check**:
 1. Is min_atr too high?
    ```bash
-   grep "ATR.*below min" logs/trading_bot.log | wc -l
+   grep "ATR.*below min" logs/trading-automata.log | wc -l
    ```
    If many: Lower min_atr
 
 2. Is min_volume too high?
    ```bash
-   grep "min_volume" logs/trading_bot.log | wc -l
+   grep "min_volume" logs/trading-automata.log | wc -l
    ```
    If many: Lower min_volume
 

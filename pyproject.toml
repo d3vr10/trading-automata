@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "trading-bot"
-version = "0.3.0"
-description = "Production-grade trading bot with Alpaca integration"
+name = "trading-automata"
+version = "0.4.0"
+description = "Trading automation platform - multi-bot orchestration with Alpaca and Coinbase"
 requires-python = ">=3.13"
 dependencies = [
     "alpaca-py>=0.25.0",
@@ -18,11 +18,11 @@ dependencies = [
 ]
 
 [project.scripts]
-trading-cli = "trading_bot.cli:cli"
+automata-cli = "trading_automata.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["trading_bot*", "config*"]
+include = ["trading_automata*", "config*"]
 exclude = ["tests*", "*.tests*"]
 
 [tool.setuptools.package-data]
@@ -47,4 +47,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=trading_bot --cov-report=html --cov-report=term"
+addopts = "-v --cov=trading_automata --cov-report=html --cov-report=term"

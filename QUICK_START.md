@@ -23,7 +23,7 @@ COINBASE_SECRET_KEY="xxx"
 COINBASE_PASSPHRASE="xxx"
 
 # Database (PostgreSQL)
-DATABASE_URL="postgresql://trading_user:password@localhost:5432/trading_bot_db"
+DATABASE_URL="postgresql://trading_user:password@localhost:5432/trading-automata_db"
 
 # Telegram (optional - set to dummy values if not using)
 TELEGRAM_BOT_TOKEN="dummy"
@@ -87,7 +87,7 @@ bots:
 
 ### Step 5: Verify Configuration (2 min)
 ```bash
-python -c "from trading_bot.config.loader import load_bot_configs; c = load_bot_configs(); print(f'✓ Loaded {len(c.bots)} bot(s)')"
+python -c "from trading-automata.config.loader import load_bot_configs; c = load_bot_configs(); print(f'✓ Loaded {len(c.bots)} bot(s)')"
 
 # Output should be:
 # ✓ Loaded 1 bot(s)
@@ -98,7 +98,7 @@ python -c "from trading_bot.config.loader import load_bot_configs; c = load_bot_
 pip install -r requirements.txt
 
 # Test imports:
-python -c "from trading_bot.orchestration.orchestrator import BotOrchestrator; print('✓ Ready')"
+python -c "from trading-automata.orchestration.orchestrator import BotOrchestrator; print('✓ Ready')"
 ```
 
 ---
@@ -106,7 +106,7 @@ python -c "from trading_bot.orchestration.orchestrator import BotOrchestrator; p
 ## Start the Bot (1 minute)
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **Expected output (first 30 seconds):**
@@ -132,7 +132,7 @@ Multi-bot mode detected - using BotOrchestrator
 
 ```bash
 # Check database for signals
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT event_type, COUNT(*) FROM trading_events
 WHERE bot_name = 'test_bot'
 GROUP BY event_type
@@ -149,7 +149,7 @@ EOF
 
 ### Check Trades:
 ```bash
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT symbol, action, quantity, price, created_at
 FROM trades
 WHERE bot_name = 'test_bot'
@@ -160,7 +160,7 @@ EOF
 
 ### View Logs:
 ```bash
-tail -f logs/trading_bot.log | grep "test_bot"
+tail -f logs/trading-automata.log | grep "test_bot"
 ```
 
 ---
@@ -189,7 +189,7 @@ tail -f logs/trading_bot.log | grep "test_bot"
 This is OK for some strategies. Check:
 ```bash
 # Verify strategy is enabled and receiving bars
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT
   DATE_TRUNC('hour', created_at) as hour,
   event_type,
@@ -216,7 +216,7 @@ To get trading alerts in Telegram:
 - Message [@BotFather](https://t.me/botfather) on Telegram
 - Command: `/newbot`
 - Name: "MyTradingBot" (any name)
-- Username: "my_trading_bot_XXXXX" (must be unique)
+- Username: "my_trading-automata_XXXXX" (must be unique)
 - Copy the token: `123:ABC...`
 
 ### 2. Get Your Chat ID:
@@ -232,7 +232,7 @@ TELEGRAM_CHAT_ID="123456789"
 ### 4. Restart Bot:
 ```bash
 # Ctrl+C to stop current bot
-python -m trading_bot.main
+python -m trading-automata.main
 
 # Should see: [test_bot] Telegram notifications enabled
 ```
@@ -330,29 +330,29 @@ BotOrchestrator (1 instance)
 
 ```bash
 # Check if bot is running
-ps aux | grep "python -m trading_bot.main"
+ps aux | grep "python -m trading-automata.main"
 
 # View recent errors
-tail -n 50 logs/trading_bot.log | grep ERROR
+tail -n 50 logs/trading-automata.log | grep ERROR
 
 # Check database connection
-psql -U trading_user -d trading_bot_db -c "SELECT 1"
+psql -U trading_user -d trading-automata_db -c "SELECT 1"
 
 # View all trades
-psql -U trading_user -d trading_bot_db \
+psql -U trading_user -d trading-automata_db \
   -c "SELECT * FROM trades WHERE bot_name='test_bot' ORDER BY created_at DESC LIMIT 20"
 
 # View recent events
-psql -U trading_user -d trading_bot_db \
+psql -U trading_user -d trading-automata_db \
   -c "SELECT event_type, details FROM trading_events WHERE bot_name='test_bot' ORDER BY created_at DESC LIMIT 50"
 
 # Check bot health
-psql -U trading_user -d trading_bot_db \
+psql -U trading_user -d trading-automata_db \
   -c "SELECT * FROM health_checks WHERE bot_name='test_bot' ORDER BY created_at DESC LIMIT 10"
 
 # Restart bot
 # 1. Press Ctrl+C in bot terminal
-# 2. Run: python -m trading_bot.main
+# 2. Run: python -m trading-automata.main
 ```
 
 ---
@@ -399,7 +399,7 @@ You have three paths forward:
 
 ## Need Help?
 
-1. **Check logs**: `tail -f logs/trading_bot.log`
+1. **Check logs**: `tail -f logs/trading-automata.log`
 2. **Check event log**: Query `trading_events` table
 3. **Check database**: Use `psql` to inspect trades/positions
 4. **Read docs**:

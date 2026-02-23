@@ -14,8 +14,8 @@ This script:
 """
 
 import sys
-from trading_bot.strategies.registry import StrategyRegistry
-from trading_bot.utils.strategy_warmer import warm_up_all_strategies
+from trading_automata.strategies.registry import StrategyRegistry
+from trading_automata.utils.strategy_warmer import warm_up_all_strategies
 
 if __name__ == "__main__":
     use_cache = True
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         print("🔴 LIVE MODE: Fetching fresh data from Alpaca API...")
     elif "--refresh" in sys.argv:
         print("⬇️  REFRESHING CACHE: Downloading latest data from Alpaca...")
-        from trading_bot.utils.data_cache import fetch_and_cache_bars
+        from trading_automata.utils.data_cache import fetch_and_cache_bars
         for symbol in ["SPY", "QQQ"]:
             fetch_and_cache_bars(symbol, num_bars=100)
         print("✅ Cache refreshed!")

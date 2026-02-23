@@ -12,7 +12,7 @@
 
 Files created:
 - `alembic/versions/003_add_bot_name.py` - Migration adding bot_name to 5 tables
-- Modified: `trading_bot/database/models.py` - Added bot_name columns
+- Modified: `trading-automata/database/models.py` - Added bot_name columns
 
 What it does:
 - Adds nullable `bot_name VARCHAR(100)` to: trades, positions, trading_events, health_checks, bot_sessions
@@ -27,8 +27,8 @@ Migration command: `alembic upgrade 003`
 **Status**: ✅ COMPLETE
 
 Files created:
-- `trading_bot/config/bot_config.py` - Pydantic models with validation
-- `trading_bot/config/loader.py` - Config loader (dual-mode: centralized YAML + distributed files)
+- `trading-automata/config/bot_config.py` - Pydantic models with validation
+- `trading-automata/config/loader.py` - Config loader (dual-mode: centralized YAML + distributed files)
 - `config/bots.yaml` - Example configuration with complete documentation
 - `config/bots/` - Directory for per-bot config files
 
@@ -57,7 +57,7 @@ Features:
 **Status**: ✅ COMPLETE
 
 File created:
-- `trading_bot/portfolio/virtual_manager.py` - Fund compartmentalization
+- `trading-automata/portfolio/virtual_manager.py` - Fund compartmentalization
 
 Key Features:
 **Virtual Fence** (Separation of Power):
@@ -88,7 +88,7 @@ Result: bot operates in "$5k sandbox" regardless of real balance
 **Status**: ✅ COMPLETE
 
 File created:
-- `trading_bot/orchestration/bot_instance.py` - Single trading bot
+- `trading-automata/orchestration/bot_instance.py` - Single TradingAutomata platform
 
 Refactored from TradingBot:
 - One instance = one broker + one allocation + one strategy set
@@ -127,7 +127,7 @@ Features:
 **Status**: ✅ COMPLETE
 
 File created:
-- `trading_bot/orchestration/orchestrator.py` - Multi-bot coordinator
+- `trading-automata/orchestration/orchestrator.py` - Multi-bot coordinator
 
 Shared Infrastructure:
 - Single DatabaseConnection (connection pool for all bots)
@@ -160,9 +160,9 @@ Performance:
 **Status**: ⏳ IN PROGRESS
 
 Files to modify:
-- `trading_bot/database/repository.py` - Add `bot_name: Optional[str] = None` to all CRUD methods
-- `trading_bot/monitoring/event_logger.py` - Add `bot_name` parameter to _log() and public methods
-- `trading_bot/database/health.py` - Change registry key to `{bot_name}:{broker}:{strategy}`
+- `trading-automata/database/repository.py` - Add `bot_name: Optional[str] = None` to all CRUD methods
+- `trading-automata/monitoring/event_logger.py` - Add `bot_name` parameter to _log() and public methods
+- `trading-automata/database/health.py` - Change registry key to `{bot_name}:{broker}:{strategy}`
 
 Changes are minimal - mostly adding optional `bot_name` parameters with backward compatibility.
 
@@ -172,7 +172,7 @@ Changes are minimal - mostly adding optional `bot_name` parameters with backward
 **Status**: ⏳ TODO
 
 Files to modify:
-- `trading_bot/notifications/telegram_bot.py`
+- `trading-automata/notifications/telegram_bot.py`
 
 Required changes:
 - Create `BotScopedTelegram` wrapper class (prepends `[bot_name]` to messages)
@@ -189,7 +189,7 @@ Required changes:
 **Status**: ⏳ TODO
 
 File to modify:
-- `trading_bot/main.py`
+- `trading-automata/main.py`
 
 Required changes:
 ```python
@@ -219,10 +219,10 @@ This maintains backward compatibility - existing deployments without bots.yaml r
 **Status**: ⏳ TODO
 
 Files to create:
-- `trading_bot/strategies/sigma_series/__init__.py`
-- `trading_bot/strategies/sigma_series/sigma_fast.py` - SigmaSeriesFastStrategy
-- `trading_bot/strategies/sigma_series/sigma_alpha.py` - SigmaSeriesAlphaStrategy
-- `trading_bot/strategies/sigma_series/sigma_alpha_bull.py` - SigmaSeriesAlphaBullStrategy
+- `trading-automata/strategies/sigma_series/__init__.py`
+- `trading-automata/strategies/sigma_series/sigma_fast.py` - SigmaSeriesFastStrategy
+- `trading-automata/strategies/sigma_series/sigma_alpha.py` - SigmaSeriesAlphaStrategy
+- `trading-automata/strategies/sigma_series/sigma_alpha_bull.py` - SigmaSeriesAlphaBullStrategy
 
 #### SigmaSeriesFastStrategy
 **Target**: 93-94% win rate, high volume, rapid momentum

@@ -1,6 +1,6 @@
 # Telegram Bot Setup Guide
 
-Get real-time trading notifications and control your trading bot via Telegram.
+Get real-time trading notifications and control your TradingAutomata platform via Telegram.
 
 ## Overview
 
@@ -29,14 +29,14 @@ The Telegram bot provides:
 3. **Type `/newbot`** and follow the prompts:
    ```
    BotFather: Alright, a new bot. How are we going to call it?
-   You: Trading Bot
+   You: TradingAutomata
 
    BotFather: Good. Now let's choose a username for your bot...
-   You: trading_bot_abc
+   You: trading-automata_abc
 
    BotFather: Done! Congratulations on your new bot. Here are your bot's details:
-   Name: Trading Bot
-   @trading_bot_abc
+   Name: TradingAutomata
+   @trading-automata_abc
 
    Use this token to access the Telegram Bot API:
    1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi
@@ -95,7 +95,7 @@ For privacy, make the bot private:
 
 **Keep this ID safe!** You'll need it in the next step.
 
-## Step 3: Configure Your Trading Bot
+## Step 3: Configure Your TradingAutomata
 
 ### Update .env File
 
@@ -140,7 +140,7 @@ This installs `python-telegram-bot>=21.0` which handles all Telegram communicati
 ## Step 5: Start Your Bot
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 You should see:
@@ -148,13 +148,13 @@ You should see:
 ```
 INFO | Initializing Telegram bot...
 INFO | ✅ Telegram bot initialized
-INFO | Trading bot started successfully
+INFO | TradingAutomata started successfully
 ```
 
 And your bot will send a startup message on Telegram:
 
 ```
-🤖 Trading Bot Started
+🤖 TradingAutomata Started
 Environment: PAPER
 Broker: ALPACA
 ```
@@ -225,7 +225,7 @@ Time: 14:23:45 UTC
 
 ### Errors
 ```
-🚨 Trading Bot Alert
+🚨 TradingAutomata Alert
 
 Type: Connection Error
 Message: WebSocket timeout
@@ -244,7 +244,7 @@ Time: 14:35:00 UTC
 
 ### Bot Startup
 ```
-🤖 Trading Bot Started
+🤖 TradingAutomata Started
 
 Environment: PAPER
 Broker: ALPACA
@@ -252,7 +252,7 @@ Broker: ALPACA
 
 ### Bot Shutdown
 ```
-🛑 Trading Bot Stopped
+🛑 TradingAutomata Stopped
 
 Shutdown time: 14:45:30 UTC
 ```
@@ -262,7 +262,7 @@ Shutdown time: 14:45:30 UTC
 ### Morning: Check Status
 ```
 You: /status
-Bot: 📊 Trading Bot Status
+Bot: 📊 TradingAutomata Status
      Status: Running
      Portfolio Value: $25,450.32
      Broker: Alpaca (Paper)
@@ -316,7 +316,7 @@ Both should have values (not empty).
 **Check bot is running:**
 ```bash
 # In your terminal
-tail -f /tmp/trading_bot.log | grep Telegram
+tail -f /tmp/trading-automata.log | grep Telegram
 ```
 
 Should show: `INFO | ✅ Telegram bot initialized`
@@ -352,14 +352,14 @@ The bot sets commands automatically on startup. If they don't appear:
 
 **Check if trades are happening:**
 ```bash
-grep -i "trade executed\|Signal executed" /tmp/trading_bot.log
+grep -i "trade executed\|Signal executed" /tmp/trading-automata.log
 ```
 
 If no trades are being executed, check strategy configuration instead.
 
 **Check Telegram is enabled:**
 ```bash
-grep -i telegram /tmp/trading_bot.log
+grep -i telegram /tmp/trading-automata.log
 ```
 
 ## Security Notes
@@ -395,14 +395,14 @@ Your chat ID is like a phone number - keep it private. Only the bot should have 
 
 ## Multiple Bots
 
-You can run multiple trading bots with different Telegram bots:
+You can run multiple TradingAutomata platforms with different Telegram bots:
 
 ```bash
 # Bot 1: Alpaca paper trading
-TELEGRAM_TOKEN=token1 TELEGRAM_CHAT_ID=123 python -m trading_bot.main
+TELEGRAM_TOKEN=token1 TELEGRAM_CHAT_ID=123 python -m trading-automata.main
 
 # Bot 2: Coinbase live trading (different terminal)
-TELEGRAM_TOKEN=token2 TELEGRAM_CHAT_ID=123 python -m trading_bot.main &
+TELEGRAM_TOKEN=token2 TELEGRAM_CHAT_ID=123 python -m trading-automata.main &
 ```
 
 Each bot sends to its own Telegram bot, but same chat ID.
@@ -457,7 +457,7 @@ A: Not yet, but they're easy to add. See `src/notifications/telegram_bot.py` for
 1. ✅ Set up Telegram bot token
 2. ✅ Get your chat ID
 3. ✅ Configure in `.env`
-4. ✅ Start trading bot
+4. ✅ Start TradingAutomata platform
 5. Try commands: `/status`, `/trades`, `/metrics`
 6. Test pause/resume: `/pause` then `/resume`
 
@@ -465,11 +465,11 @@ A: Not yet, but they're easy to add. See `src/notifications/telegram_bot.py` for
 
 - **Can't find token?** Check BotFather `/mybots`
 - **Chat ID issues?** Visit `getUpdates` URL directly
-- **Bot not responding?** Check logs: `grep Telegram /tmp/trading_bot.log`
+- **Bot not responding?** Check logs: `grep Telegram /tmp/trading-automata.log`
 - **Tokens being rejected?** Regenerate in BotFather
 
 ---
 
-**You're all set!** Your trading bot is now on Telegram. 📱
+**You're all set!** Your TradingAutomata platform is now on Telegram. 📱
 
 Notifications will appear as they happen, and your father can monitor the bot from his phone anytime. 🚀

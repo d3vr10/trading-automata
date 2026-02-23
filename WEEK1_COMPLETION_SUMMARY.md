@@ -28,13 +28,13 @@ Week 1 production features have been **successfully implemented**:
 
 **Database URL:**
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading-automata
 ```
 
 ### 2. Trade Repository API
 
 ```python
-from trading_bot.database import TradeRepository
+from trading-automata.database import TradeRepository
 
 # Record trade entry
 trade_id = await repo.record_trade_entry(
@@ -76,7 +76,7 @@ positions = await repo.get_open_positions(strategy="rsi_atr_trend")
 - Automatic persistence to database
 
 ```python
-from trading_bot.database import HealthCheckManager
+from trading-automata.database import HealthCheckManager
 
 # Create health check
 check = HealthCheckManager(conn, broker='alpaca', strategy='rsi_atr_trend')
@@ -123,7 +123,7 @@ status = await check.get_health_status()
 **New Fields:**
 ```python
 database_url: str = Field(
-    'postgresql://postgres:postgres@localhost:5432/trading_bot',
+    'postgresql://postgres:postgres@localhost:5432/trading-automata',
     env='DATABASE_URL'
 )
 database_pool_size: int = Field(10, env='DATABASE_POOL_SIZE')
@@ -150,14 +150,14 @@ database_max_overflow: int = Field(20, env='DATABASE_MAX_OVERFLOW')
 ```bash
 # Install PostgreSQL
 docker run -d \
-  --name trading-bot-db \
+  --name trading-automata-db \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=trading_bot \
+  -e POSTGRES_DB=trading-automata \
   -p 5432:5432 \
   postgres:15
 
 # Create tables
-python -m trading_bot.database.init
+python -m trading-automata.database.init
 
 # Expected output:
 # ✅ Connected to PostgreSQL
@@ -169,15 +169,15 @@ python -m trading_bot.database.init
 
 ```bash
 # .env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading-automata
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
 ```
 
-### 3. Run Trading Bot
+### 3. Run TradingAutomata
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **Bot will:**
@@ -191,7 +191,7 @@ python -m trading_bot.main
 ### 4. Query Trade Data
 
 ```bash
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # View recent trades
 SELECT symbol, entry_price, exit_price, pnl_percent, strategy
@@ -279,18 +279,18 @@ Before going live:
 ```bash
 # Start PostgreSQL
 docker run -d \
-  --name trading-bot-db \
+  --name trading-automata-db \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=trading_bot \
+  -e POSTGRES_DB=trading-automata \
   -p 5432:5432 \
   postgres:15
 
 # Initialize database
-docker exec trading-bot-db psql -U postgres -d trading_bot \
+docker exec trading-automata-db psql -U postgres -d trading-automata \
   -f /path/to/database/init.sql
 
 # Run bot
-BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
+BROKER=alpaca TRADING_ENV=paper python -m trading-automata.main
 ```
 
 ### Production Best Practices
@@ -355,7 +355,7 @@ BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
 
 ✅ **Week 1 Complete**
 
-The trading bot now has a production-ready database layer with:
+The TradingAutomata platform now has a production-ready database layer with:
 - Persistent trade history
 - Performance analytics
 - Health monitoring
@@ -367,6 +367,6 @@ Ready for:
 - Performance analysis
 - Future API exposure
 
-**Next Step:** Run `python -m trading_bot.main` with PostgreSQL running!
+**Next Step:** Run `python -m trading-automata.main` with PostgreSQL running!
 
 🚀 Let's trade!

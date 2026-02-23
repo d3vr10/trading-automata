@@ -1,14 +1,14 @@
-# Getting Started - Trading Bot
+# Getting Started - TradingAutomata
 
-Complete guide to get your trading bot up and running with your father monitoring via Telegram.
+Complete guide to get your TradingAutomata platform up and running with your father monitoring via Telegram.
 
 ## 5-Minute Quick Start
 
 ### 1. Prerequisites
 ```bash
 # Install Docker Desktop from https://www.docker.com/products/docker-desktop
-# Clone or download this trading bot project
-cd trading-bot
+# Clone or download this TradingAutomata platform project
+cd trading-automata
 ```
 
 ### 2. Get API Keys
@@ -25,7 +25,7 @@ nano .env
 # Add your ALPACA_API_KEY and ALPACA_SECRET_KEY
 ```
 
-### 4. Start Trading Bot + Database
+### 4. Start TradingAutomata + Database
 ```bash
 docker-compose -f docker/docker-compose.yml up -d
 ```
@@ -33,10 +33,10 @@ docker-compose -f docker/docker-compose.yml up -d
 ### 5. Check Status
 ```bash
 docker-compose -f docker/docker-compose.yml ps
-# Should show both 'postgres' and 'trading-bot' as running
+# Should show both 'postgres' and 'trading-automata' as running
 ```
 
-**Done!** Trading bot is running with PostgreSQL database. 🚀
+**Done!** TradingAutomata is running with PostgreSQL database. 🚀
 
 ---
 
@@ -66,8 +66,8 @@ docker-compose -f docker/docker-compose.yml ps
    - Open Telegram
    - Search: `@BotFather`
    - Type: `/newbot`
-   - Name it: "Trading Bot"
-   - Username: "trading_bot_xyz"
+   - Name it: "TradingAutomata"
+   - Username: "trading-automata_xyz"
    - Copy the **TOKEN**
 
 2. **Get Chat ID**
@@ -109,10 +109,10 @@ TELEGRAM_CHAT_ID=your_chat_id
 docker-compose -f docker/docker-compose.yml up -d
 
 # Check logs
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # Should see:
-# INFO | Trading Bot initialized
+# INFO | TradingAutomata initialized
 # INFO | ✅ Connected to PostgreSQL
 # INFO | ✅ Telegram bot initialized
 # INFO | Registered 4 health checks
@@ -131,10 +131,10 @@ In Telegram, message your bot:
 
 ```bash
 # View live logs
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # Check database
-docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT * FROM trades LIMIT 5"
+docker exec trading-automata-db psql -U postgres -d trading-automata -c "SELECT * FROM trades LIMIT 5"
 
 # View Telegram alerts in real-time
 # (bot sends alerts when trades execute)
@@ -148,7 +148,7 @@ docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT * FROM tra
 
 | Service | Purpose | Port |
 |---------|---------|------|
-| **trading-bot** | Main trading application | - |
+| **trading-automata** | Main trading application | - |
 | **postgres** | Database for trades/metrics | 5432 |
 | **Telegram Bot** | Real-time monitoring | - |
 
@@ -156,7 +156,7 @@ docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT * FROM tra
 
 ```
 logs/
-  └── trading_bot.log          # Bot logs
+  └── trading-automata.log          # Bot logs
 
 postgres_data/
   ├── trades                   # Entry/exit records
@@ -213,7 +213,7 @@ postgres_data/
 ### View Logs
 
 ```bash
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # Follow specific service
 docker-compose -f docker/docker-compose.yml logs -f postgres
@@ -310,10 +310,10 @@ app:
 
 ```bash
 # Check logs
-docker logs trading-bot
+docker logs trading-automata
 
 # Check PostgreSQL
-docker logs trading-bot-db
+docker logs trading-automata-db
 
 # Restart
 docker-compose -f docker/docker-compose.yml restart
@@ -327,24 +327,24 @@ docker-compose -f docker/docker-compose.yml ps
 
 # Check connection string
 echo $DATABASE_URL
-# Should be: postgresql://postgres:postgres@postgres:5432/trading_bot
+# Should be: postgresql://postgres:postgres@postgres:5432/trading-automata
 
 # Test connection
-docker exec trading-bot psql $DATABASE_URL -c "SELECT 1"
+docker exec trading-automata psql $DATABASE_URL -c "SELECT 1"
 ```
 
 ### "Telegram not sending messages"
 
 ```bash
 # Check token is configured
-docker exec trading-bot env | grep TELEGRAM
+docker exec trading-automata env | grep TELEGRAM
 
 # Both should have values:
 # TELEGRAM_TOKEN=...
 # TELEGRAM_CHAT_ID=...
 
 # Check logs for Telegram errors
-docker logs trading-bot | grep -i telegram
+docker logs trading-automata | grep -i telegram
 ```
 
 ### "No trades executing"
@@ -355,7 +355,7 @@ docker logs trading-bot | grep -i telegram
 cat config/strategies.yaml | grep symbols
 
 # Check logs for strategy errors
-docker logs trading-bot | grep -i "strategy\|signal"
+docker logs trading-automata | grep -i "strategy\|signal"
 ```
 
 ---
@@ -376,14 +376,14 @@ docker logs trading-bot | grep -i "strategy\|signal"
 
 ```bash
 # Real-time logs
-docker logs -f trading-bot
+docker logs -f trading-automata
 
 # Check database
-docker exec trading-bot-db psql -U postgres -d trading_bot \
+docker exec trading-automata-db psql -U postgres -d trading-automata \
   -c "SELECT symbol, entry_price, exit_price, pnl_percent FROM trades ORDER BY entry_timestamp DESC LIMIT 10"
 
 # Check health
-docker exec trading-bot-db psql -U postgres -d trading_bot \
+docker exec trading-automata-db psql -U postgres -d trading-automata \
   -c "SELECT broker, strategy, is_healthy, connection_errors FROM health_checks"
 ```
 
@@ -422,10 +422,10 @@ Edit `config/strategies.yaml` to:
 
 ```bash
 # Backup
-docker exec trading-bot-db pg_dump -U postgres -d trading_bot > backup.sql
+docker exec trading-automata-db pg_dump -U postgres -d trading-automata > backup.sql
 
 # Restore
-docker exec -i trading-bot-db psql -U postgres -d trading_bot < backup.sql
+docker exec -i trading-automata-db psql -U postgres -d trading-automata < backup.sql
 ```
 
 ---
@@ -450,7 +450,7 @@ docker exec -i trading-bot-db psql -U postgres -d trading_bot < backup.sql
 - [ ] `.env` file configured with credentials
 - [ ] Docker Desktop installed & running
 - [ ] `docker-compose up -d` successfully started
-- [ ] Both `postgres` and `trading-bot` containers running
+- [ ] Both `postgres` and `trading-automata` containers running
 - [ ] Telegram bot receives startup message
 - [ ] `/status` command works in Telegram
 - [ ] Trades appear in database within first hour
@@ -484,7 +484,7 @@ nano .env
 docker-compose -f docker/docker-compose.yml up -d
 
 # 4. Monitor
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # 5. Get alerts on Telegram
 # Done! 🎉

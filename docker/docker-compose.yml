@@ -1,13 +1,13 @@
-name: trading-bot
+name: trading-automata
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: trading-bot-db
+    container_name: trading-automata-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-trading_bot}
+      POSTGRES_DB: ${POSTGRES_DB:-trading-automata}
 
     ports:
       # Expose on localhost:5432 for external connections (optional)
@@ -21,7 +21,7 @@ services:
 
     # Health check - verify database is ready
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading_bot}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading-automata}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,12 +39,12 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Trading Bot Application
-  trading-bot:
+  # TradingAutomata Application
+  trading-automata:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: trading-bot
+    container_name: trading-automata
     env_file: .env
 
     # Wait for PostgreSQL to be healthy before starting
@@ -66,7 +66,7 @@ services:
 
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_FILE: ${LOG_FILE:-/app/logs/trading_bot.log}
+      LOG_FILE: ${LOG_FILE:-/app/logs/trading-automata.log}
 
       # Strategy Configuration
       STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-config/strategies.yaml}
@@ -77,7 +77,7 @@ services:
       MAX_PORTFOLIO_RISK: ${MAX_PORTFOLIO_RISK:-0.02}
 
       # Database Configuration
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/trading_bot}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/trading-automata}
       DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
       DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-20}
 

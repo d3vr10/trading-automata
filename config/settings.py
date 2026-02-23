@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Database configuration
     database_url: str = Field(
-        'postgresql://postgres:postgres@localhost:5432/trading_bot',
+        'postgresql://postgres:postgres@localhost:5432/trading_automata',
         env='DATABASE_URL'
     )
     database_pool_size: int = Field(10, env='DATABASE_POOL_SIZE')

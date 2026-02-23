@@ -6,7 +6,7 @@ This guide explains the bot startup process, what to look for in the logs, and h
 
 ### Phase 1: Initialization (5-10 seconds)
 ```
-🤖 Trading Bot Startup
+🤖 TradingAutomata Startup
 ====================
 🗄️  Initializing database migrations...
 ⬇️  Checking strategy data cache...
@@ -124,34 +124,34 @@ Something went wrong. Bot may not be operational.
 docker-compose ps
 
 # Check latest logs
-docker-compose logs --tail 20 trading-bot
+docker-compose logs --tail 20 trading-automata
 ```
 
 ### 2. Look for Trading Activity
 ```bash
 # Filter for signals and trades
-docker-compose logs trading-bot | grep -E "Signal|Order|Trade"
+docker-compose logs trading-automata | grep -E "Signal|Order|Trade"
 
 # Look for bars being processed
-docker-compose logs trading-bot | grep "bar\|Bar"
+docker-compose logs trading-automata | grep "bar\|Bar"
 ```
 
 ### 3. Monitor Performance
 ```bash
 # Watch CPU and memory usage
-docker stats trading-bot
+docker stats trading-automata
 
 # Check database is responsive
-docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT COUNT(*) FROM trades"
+docker-compose exec postgres psql -U postgres -d trading-automata -c "SELECT COUNT(*) FROM trades"
 ```
 
 ### 4. Verify Strategies
 ```bash
 # Check which strategies are loaded
-docker-compose logs trading-bot | grep "Loaded.*strategies"
+docker-compose logs trading-automata | grep "Loaded.*strategies"
 
 # See monitored symbols
-docker-compose logs trading-bot | grep "Monitoring symbols"
+docker-compose logs trading-automata | grep "Monitoring symbols"
 ```
 
 ## Common Log Patterns
@@ -207,38 +207,38 @@ docker-compose restart postgres
 ### "Bot starts but no trading activity"
 ```bash
 # Verify strategies loaded
-docker-compose logs trading-bot | grep -i strategy
+docker-compose logs trading-automata | grep -i strategy
 
 # Check if in production hours (market open?)
 # Check if symbols have data
-docker-compose logs trading-bot | grep "Bar received"
+docker-compose logs trading-automata | grep "Bar received"
 
 # See if signals are being generated
-docker-compose logs trading-bot | grep -i signal
+docker-compose logs trading-automata | grep -i signal
 ```
 
 ### "Strategies won't load"
 ```bash
 # Check strategy config file exists
-docker-compose exec trading-bot ls config/strategies.yaml
+docker-compose exec trading-automata ls config/strategies.yaml
 
 # Validate YAML syntax
-docker-compose exec trading-bot python -c "import yaml; yaml.safe_load(open('config/strategies.yaml'))"
+docker-compose exec trading-automata python -c "import yaml; yaml.safe_load(open('config/strategies.yaml'))"
 
 # Check strategy class names
-docker-compose exec trading-bot python -c "from trading_bot.strategies.registry import StrategyRegistry; print(StrategyRegistry.REGISTRY)"
+docker-compose exec trading-automata python -c "from trading_automata.strategies.registry import StrategyRegistry; print(StrategyRegistry.REGISTRY)"
 ```
 
 ### "High memory usage"
 ```bash
 # Check what's consuming memory
-docker stats trading-bot
+docker stats trading-automata
 
 # Restart bot to reset memory
-docker-compose restart trading-bot
+docker-compose restart trading-automata
 
 # If problem persists, check database connections
-docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT count(*) FROM pg_stat_activity"
+docker-compose exec postgres psql -U postgres -d trading-automata -c "SELECT count(*) FROM pg_stat_activity"
 ```
 
 ## Performance Monitoring
@@ -246,25 +246,25 @@ docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT count(*)
 ### Log Frequency Analysis
 ```bash
 # Count different log types per hour
-docker-compose logs trading-bot --since 1h | grep -c "\[bot\]"
+docker-compose logs trading-automata --since 1h | grep -c "\[bot\]"
 
 # Track signal frequency
-docker-compose logs trading-bot | grep -c "Signal"
+docker-compose logs trading-automata | grep -c "Signal"
 
 # Monitor errors
-docker-compose logs trading-bot | grep -c "ERROR"
+docker-compose logs trading-automata | grep -c "ERROR"
 ```
 
 ### Database Health
 ```bash
 # Check table sizes
-docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) FROM pg_tables ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC"
+docker-compose exec postgres psql -U postgres -d trading-automata -c "SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) FROM pg_tables ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC"
 
 # Check index usage
-docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT * FROM trades LIMIT 1"
+docker-compose exec postgres psql -U postgres -d trading-automata -c "SELECT * FROM trades LIMIT 1"
 
 # Monitor slow queries
-docker-compose exec postgres psql -U postgres -d trading_bot -c "SELECT query, calls, mean_time FROM pg_stat_statements LIMIT 10"
+docker-compose exec postgres psql -U postgres -d trading-automata -c "SELECT query, calls, mean_time FROM pg_stat_statements LIMIT 10"
 ```
 
 ## Log Rotation
@@ -273,7 +273,7 @@ To prevent log files from growing too large:
 
 ```bash
 # Keep only last 100 lines
-docker-compose logs --tail 100 trading-bot > bot_logs.txt
+docker-compose logs --tail 100 trading-automata > bot_logs.txt
 
 # Or use logrotate for persistent logging
 # (if you mount logs to host filesystem)
@@ -284,25 +284,25 @@ docker-compose logs --tail 100 trading-bot > bot_logs.txt
 ### Watch specific events
 ```bash
 # Follow only signals
-watch -n 1 'docker-compose logs --tail 50 trading-bot | grep -i signal'
+watch -n 1 'docker-compose logs --tail 50 trading-automata | grep -i signal'
 
 # Follow only trades
-watch -n 1 'docker-compose logs --tail 50 trading-bot | grep -i trade'
+watch -n 1 'docker-compose logs --tail 50 trading-automata | grep -i trade'
 
 # Follow only errors
-watch -n 1 'docker-compose logs --tail 50 trading-bot | grep -i error'
+watch -n 1 'docker-compose logs --tail 50 trading-automata | grep -i error'
 ```
 
 ### Parse logs for metrics
 ```bash
 # Count signals per symbol
-docker-compose logs trading-bot | grep "Signal" | awk '{print $NF}' | sort | uniq -c
+docker-compose logs trading-automata | grep "Signal" | awk '{print $NF}' | sort | uniq -c
 
 # Track P&L
-docker-compose logs trading-bot | grep "Trade exit" | awk '{print $(NF-1)}'
+docker-compose logs trading-automata | grep "Trade exit" | awk '{print $(NF-1)}'
 
 # Monitor uptime
-docker-compose logs trading-bot | grep "trading loop started"
+docker-compose logs trading-automata | grep "trading loop started"
 ```
 
 ## Related Documentation

@@ -29,7 +29,7 @@ COINBASE_SECRET_KEY="your_secret_key_here"
 COINBASE_PASSPHRASE="your_passphrase_here"
 
 # Database (PostgreSQL)
-DATABASE_URL="postgresql://user:password@localhost:5432/trading_bot_db"
+DATABASE_URL="postgresql://user:password@localhost:5432/trading-automata_db"
 
 # Telegram (optional, but recommended for notifications)
 TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
@@ -61,7 +61,7 @@ This adds:
 pip install -r requirements.txt
 
 # Verify installation
-python -c "from trading_bot.orchestration.orchestrator import BotOrchestrator; print('✓ Multi-bot system ready')"
+python -c "from trading-automata.orchestration.orchestrator import BotOrchestrator; print('✓ Multi-bot system ready')"
 ```
 
 ---
@@ -233,13 +233,13 @@ strategies:
 
 ```bash
 # Navigate to project directory
-cd /home/d3vr10/Documents/Projects/trading-bot
+cd /home/d3vr10/Documents/Projects/trading-automata
 
 # Ensure environment variables are loaded
 export $(cat .env | xargs)
 
 # Start the system
-python -m trading_bot.main
+python -m trading-automata.main
 
 # Output should show:
 # Multi-bot mode detected - using BotOrchestrator
@@ -259,7 +259,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: trading_bot_db
+      POSTGRES_DB: trading-automata_db
       POSTGRES_USER: trading_user
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
@@ -267,10 +267,10 @@ services:
     ports:
       - "5432:5432"
 
-  trading-bot:
+  trading-automata:
     build: .
     environment:
-      DATABASE_URL: "postgresql://trading_user:${DB_PASSWORD}@postgres:5432/trading_bot_db"
+      DATABASE_URL: "postgresql://trading_user:${DB_PASSWORD}@postgres:5432/trading-automata_db"
       COINBASE_API_KEY: ${COINBASE_API_KEY}
       COINBASE_SECRET_KEY: ${COINBASE_SECRET_KEY}
       COINBASE_PASSPHRASE: ${COINBASE_PASSPHRASE}
@@ -300,7 +300,7 @@ docker-compose -f docker-compose.prod.yml up -d
 ### 1. Broker Connection
 ```bash
 # Check logs for successful connection
-docker-compose logs trading-bot | grep "Connected to Coinbase"
+docker-compose logs trading-automata | grep "Connected to Coinbase"
 
 # Or in local terminal:
 # Should see: [coinbase_bot] Connected to Coinbase broker successfully
@@ -309,13 +309,13 @@ docker-compose logs trading-bot | grep "Connected to Coinbase"
 ### 2. Strategy Registration
 ```bash
 # Verify Sigma strategies loaded
-docker-compose logs trading-bot | grep "SigmaSeriesFastStrategy\|SigmaSeriesAlphaStrategy\|SigmaSeriesAlphaBullStrategy"
+docker-compose logs trading-automata | grep "SigmaSeriesFastStrategy\|SigmaSeriesAlphaStrategy\|SigmaSeriesAlphaBullStrategy"
 ```
 
 ### 3. Data Flow
 ```bash
 # Check that bars are being received
-docker-compose logs trading-bot | grep "bars received"
+docker-compose logs trading-automata | grep "bars received"
 
 # Example: [2026-02-22 10:30:45] coinbase_bot - 50 bars received for BTC-USD
 ```
@@ -323,7 +323,7 @@ docker-compose logs trading-bot | grep "bars received"
 ### 4. Signal Generation
 ```bash
 # Monitor signal creation
-docker-compose logs trading-bot | grep "Signal generated"
+docker-compose logs trading-automata | grep "Signal generated"
 
 # Example: [2026-02-22 10:35:20] coinbase_bot - Signal: BUY BTC-USD @ $42,500
 ```
@@ -338,7 +338,7 @@ docker-compose logs trading-bot | grep "Signal generated"
 ### 6. Database Records
 ```bash
 # Query trades created
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT bot_name, symbol, action, quantity, price, created_at
 FROM trades
 WHERE bot_name = 'coinbase_bot'
@@ -385,7 +385,7 @@ Once running, use Telegram commands to monitor:
 **Cause:** Indicators not converging, filters too strict, or market conditions misaligned with strategy
 **Debug:** Check event logger
 ```bash
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT event_type, details, created_at
 FROM trading_events
 WHERE bot_name = 'coinbase_bot'
@@ -451,7 +451,7 @@ alembic upgrade head
 1. **Set up environment** (prerequisites + .env)
 2. **Create bots.yaml** (start with single $100 allocation)
 3. **Run database migration** (`alembic upgrade 003`)
-4. **Start local test** (30 minutes via `python -m trading_bot.main`)
+4. **Start local test** (30 minutes via `python -m trading-automata.main`)
 5. **Verify signals** (check logs + Telegram + database)
 6. **Scale if successful** (increase allocation after 1 week of positive data)
 7. **Decision point** (after 1+ month): keep running, refine, or pivot strategy

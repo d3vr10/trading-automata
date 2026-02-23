@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This document explains how to configure the trading bot using configuration files and environment variables.
+This document explains how to configure the TradingAutomata platform using configuration files and environment variables.
 
 ## Configuration Hierarchy
 
@@ -50,7 +50,7 @@ export LOG_LEVEL="INFO"
 Run bot:
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Method 2: .env File
@@ -106,7 +106,7 @@ ALPACA_SECRET_KEY=dev_secret
 Environment variable override:
 
 ```bash
-TRADING_ENV=live python -m trading_bot.main
+TRADING_ENV=live python -m trading-automata.main
 ```
 
 ## Configuration Options
@@ -125,7 +125,7 @@ TRADING_ENV=live python -m trading_bot.main
 | Key | Environment Variable | Type | Default | Description |
 |-----|----------------------|------|---------|-------------|
 | `log_level` | `LOG_LEVEL` | string | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `log_file` | `LOG_FILE` | string | `logs/trading_bot.log` | Path to log file (optional) |
+| `log_file` | `LOG_FILE` | string | `logs/trading-automata.log` | Path to log file (optional) |
 
 ### Strategy Configuration
 
@@ -225,7 +225,7 @@ ALPACA_SECRET_KEY=...   # LIVE trading secret
 The bot validates configuration on startup:
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 If configuration is invalid, you'll see errors like:
@@ -245,7 +245,7 @@ ALPACA_API_KEY=pk_...
 ALPACA_SECRET_KEY=...
 TRADING_ENV=paper
 LOG_LEVEL=DEBUG
-LOG_FILE=logs/trading_bot.log
+LOG_FILE=logs/trading-automata.log
 ```
 
 ### Testing
@@ -254,7 +254,7 @@ LOG_FILE=logs/trading_bot.log
 TRADING_ENV=paper \
 LOG_LEVEL=INFO \
 STRATEGY_CONFIG_PATH=config/strategies.test.yaml \
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Production
@@ -309,7 +309,7 @@ ValueError: Strategy config file not found: config/strategies.yaml
 **Solution:**
 ```bash
 ls config/strategies.yaml  # Verify file exists
-STRATEGY_CONFIG_PATH=./config/strategies.yaml python -m trading_bot.main
+STRATEGY_CONFIG_PATH=./config/strategies.yaml python -m trading-automata.main
 ```
 
 ### Missing required settings
@@ -363,12 +363,12 @@ export TRADING_ENV=paper  # Only 'paper' or 'live'
 
 5. **Validate on startup**
    ```bash
-   python -m trading_bot.main  # Will fail if config is invalid
+   python -m trading-automata.main  # Will fail if config is invalid
    ```
 
 6. **Use specific config paths for different environments**
    ```bash
-   CONFIG_FILE_PATH=config/config.prod.yml python -m trading_bot.main
+   CONFIG_FILE_PATH=config/config.prod.yml python -m trading-automata.main
    ```
 
 ## Configuration Files Reference

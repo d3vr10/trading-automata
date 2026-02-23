@@ -1,6 +1,6 @@
 # Quick Start: Database & Health Checks
 
-Get the trading bot with database integration running in 5 minutes.
+Get the TradingAutomata platform with database integration running in 5 minutes.
 
 ## Step 1: Start PostgreSQL (2 minutes)
 
@@ -9,14 +9,14 @@ Get the trading bot with database integration running in 5 minutes.
 ```bash
 # Start PostgreSQL container
 docker run -d \
-  --name trading-bot-db \
+  --name trading-automata-db \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=trading_bot \
+  -e POSTGRES_DB=trading-automata \
   -p 5432:5432 \
   postgres:15
 
 # Verify it's running
-docker ps | grep trading-bot-db
+docker ps | grep trading-automata-db
 # Should show: ... postgres:15 ... Up X seconds
 ```
 
@@ -27,7 +27,7 @@ brew install postgresql@15
 brew services start postgresql@15
 
 # Create database
-createdb -U postgres trading_bot
+createdb -U postgres trading-automata
 ```
 
 ### Option C: Linux (apt)
@@ -37,17 +37,17 @@ sudo apt-get install postgresql-15
 sudo systemctl start postgresql
 
 # Create database
-sudo -u postgres createdb trading_bot
+sudo -u postgres createdb trading-automata
 ```
 
 ## Step 2: Initialize Database Schema (1 minute)
 
 ```bash
 # Navigate to project root
-cd /home/d3vr10/Documents/Projects/trading-bot
+cd /home/d3vr10/Documents/Projects/trading-automata
 
 # Initialize database schema
-python -m trading_bot.database.init
+python -m trading-automata.database.init
 
 # Expected output:
 # ✅ Connected to PostgreSQL
@@ -65,7 +65,7 @@ cp .env.example .env
 # Edit .env and verify:
 cat .env | grep DATABASE
 # Should show:
-# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading-automata
 # DATABASE_POOL_SIZE=10
 # DATABASE_MAX_OVERFLOW=20
 ```
@@ -74,11 +74,11 @@ cat .env | grep DATABASE
 
 ```bash
 # Alpaca paper trading (recommended for testing)
-BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
+BROKER=alpaca TRADING_ENV=paper python -m trading-automata.main
 
 # Expected output:
 # INFO | Loading configuration...
-# INFO | Trading Bot initialized - Environment: paper
+# INFO | TradingAutomata initialized - Environment: paper
 # INFO | Creating alpaca broker...
 # INFO | Connected to broker. Account: ..., Portfolio Value: $...
 # INFO | Connecting to database...
@@ -96,7 +96,7 @@ BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
 # Open another terminal and check database
 
 # Connect to database
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # View recent trades
 SELECT symbol, strategy, entry_price, pnl_percent
@@ -147,19 +147,19 @@ INFO | Recorded trade entry #1 for SPY
 ### Database (From psql)
 
 ```sql
-trading_bot=# SELECT COUNT(*) FROM trades;
+trading-automata=# SELECT COUNT(*) FROM trades;
  count
 -------
      5
 (1 row)
 
-trading_bot=# SELECT COUNT(*) FROM health_checks;
+trading-automata=# SELECT COUNT(*) FROM health_checks;
  count
 -------
      4
 (1 row)
 
-trading_bot=# SELECT * FROM trades ORDER BY entry_timestamp DESC LIMIT 1;
+trading-automata=# SELECT * FROM trades ORDER BY entry_timestamp DESC LIMIT 1;
  id | symbol | strategy      | broker  | entry_price | entry_quantity | gross_pnl | pnl_percent | is_winning_trade | entry_timestamp
 ----+--------+---------------+---------+-------------+----------------+-----------+-------------+------------------+---
   1 | SPY    | mean_reversion| alpaca  | 450.25      | 1.0            | NULL      | NULL        | NULL             | 2026-02-15 14:30:00
@@ -178,29 +178,29 @@ brew services list | grep postgres
 sudo systemctl status postgresql
 
 # If not running, start it
-docker start trading-bot-db
+docker start trading-automata-db
 # or
 brew services start postgresql
 ```
 
-### Issue: "database trading_bot does not exist"
+### Issue: "database trading-automata does not exist"
 
 ```bash
 # Check database exists
-psql -U postgres -l | grep trading_bot
+psql -U postgres -l | grep trading-automata
 
 # If not, create it
-psql -U postgres -c "CREATE DATABASE trading_bot;"
+psql -U postgres -c "CREATE DATABASE trading-automata;"
 
 # Then initialize schema
-python -m trading_bot.database.init
+python -m trading-automata.database.init
 ```
 
 ### Issue: "Failed to connect to database" in bot
 
 ```bash
 # Test database URL
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # If that works, check .env file
 cat .env | grep DATABASE_URL
@@ -263,7 +263,7 @@ TRADING_ENV=live
 # Get live API keys from https://app.alpaca.markets/
 
 # Run bot
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### 4. Add Alerts (Week 2)
@@ -296,7 +296,7 @@ After confirming database works, add:
 ```
 Host: localhost
 Port: 5432
-Database: trading_bot
+Database: trading-automata
 User: postgres
 Password: postgres
 ```
@@ -305,19 +305,19 @@ Password: postgres
 
 ```bash
 # View bot logs (in real-time)
-tail -f /tmp/trading_bot.log  # if configured
+tail -f /tmp/trading-automata.log  # if configured
 
 # Check database size
-psql -c "SELECT pg_size_pretty(pg_database_size('trading_bot'));"
+psql -c "SELECT pg_size_pretty(pg_database_size('trading-automata'));"
 
 # Backup database
-pg_dump -U postgres trading_bot > backup.sql
+pg_dump -U postgres trading-automata > backup.sql
 
 # Restore database
-psql -U postgres trading_bot < backup.sql
+psql -U postgres trading-automata < backup.sql
 
 # Clear all trades (careful!)
-psql -U postgres -d trading_bot -c "DELETE FROM trades; DELETE FROM health_checks;"
+psql -U postgres -d trading-automata -c "DELETE FROM trades; DELETE FROM health_checks;"
 ```
 
 ## Expected Resource Usage

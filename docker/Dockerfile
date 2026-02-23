@@ -34,7 +34,7 @@ RUN chmod +x docker/entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import os; os.path.exists('logs/trading_bot.log') or exit(1)"
+    CMD python -c "import os; os.path.exists('logs/trading-automata.log') or exit(1)"
 
 # Use entrypoint script for initialization and startup
 ENTRYPOINT ["docker/entrypoint.sh"]

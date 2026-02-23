@@ -303,12 +303,12 @@ Edit `config/strategies.yaml`:
 ### Step 4: Run Bot
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 Monitor logs:
 ```bash
-tail -f logs/trading_bot.log
+tail -f logs/trading-automata.log
 ```
 
 ### Step 5: Monitor Performance

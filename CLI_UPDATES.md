@@ -308,7 +308,7 @@ def detect_multi_bot_mode() -> bool:
 
 ## Modified Files
 
-**File:** `trading_bot/cli.py`
+**File:** `trading-automata/cli.py`
 - Added imports: `Path`, `load_bot_configs`
 - Added functions: `detect_multi_bot_mode()`, updated `get_database()`, `get_database_url()`
 - Updated commands: `status`, `trades`, `metrics`, `health`, `positions`, `summary`, `events`
@@ -328,8 +328,8 @@ def detect_multi_bot_mode() -> bool:
 trading-cli status
 
 # Should show either:
-# "🤖 Trading Bot Status (Multi-Bot Mode)" - if config/bots.yaml exists
-# "🤖 Trading Bot Status (Legacy Single-Bot Mode)" - if not
+# "🤖 TradingAutomata Status (Multi-Bot Mode)" - if config/bots.yaml exists
+# "🤖 TradingAutomata Status (Legacy Single-Bot Mode)" - if not
 ```
 
 ### Test Bot Filtering

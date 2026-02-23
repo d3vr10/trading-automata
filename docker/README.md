@@ -1,6 +1,6 @@
-# Docker Setup for Trading Bot
+# Docker Setup for TradingAutomata
 
-This directory contains Docker configuration files for running the trading bot in a containerized environment.
+This directory contains Docker configuration files for running the TradingAutomata platform in a containerized environment.
 
 ## Files
 
@@ -25,7 +25,7 @@ cp .env.example .env
 nano .env
 ```
 
-### 3. Run the Trading Bot
+### 3. Run the TradingAutomata
 
 ```bash
 docker-compose up
@@ -47,7 +47,7 @@ docker-compose logs -f
 docker-compose logs --tail=100
 
 # Specific service
-docker-compose logs -f trading-bot
+docker-compose logs -f trading-automata
 ```
 
 ### 5. Stop the Bot
@@ -149,7 +149,7 @@ docker-compose up
 Changes to Python code require container restart:
 
 ```bash
-docker-compose restart trading-bot
+docker-compose restart trading-automata
 ```
 
 ## Switching Between Paper and Live Trading
@@ -171,7 +171,7 @@ ALPACA_SECRET_KEY=your_live_secret
 Then restart:
 
 ```bash
-docker-compose restart trading-bot
+docker-compose restart trading-automata
 ```
 
 ### Option 2: Edit config.yml
@@ -222,7 +222,7 @@ deploy:
 
 Check logs:
 ```bash
-docker-compose logs -f trading-bot
+docker-compose logs -f trading-automata
 ```
 
 Common issues:
@@ -235,7 +235,7 @@ Common issues:
 Verify `config/config.yml` exists and is valid YAML:
 
 ```bash
-docker-compose exec trading-bot python -c "
+docker-compose exec trading-automata python -c "
 import yaml
 with open('config/config.yml') as f:
     yaml.safe_load(f)
@@ -285,7 +285,7 @@ For production:
 
 3. Add monitoring:
    ```bash
-   docker stats trading-bot
+   docker stats trading-automata
    ```
 
 4. Use external logs:

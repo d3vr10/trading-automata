@@ -1,4 +1,4 @@
-# Trading Bot Configuration File
+# TradingAutomata Configuration File
 #
 # Environment variables have precedence over settings in this file.
 # For example, if both CONFIG_FILE and TRADING_ENV are set,
@@ -46,7 +46,7 @@ app:
 
   # Log file path (leave empty for console only)
   # Environment variable: LOG_FILE
-  log_file: logs/trading_bot.log
+  log_file: logs/trading_automata.log
 
   # ============================================================================
   # STRATEGY CONFIGURATION

@@ -40,16 +40,16 @@
 
 ### New Files (13) ✅
 ```
-trading_bot/config/bot_config.py                    Pydantic models
-trading_bot/config/loader.py                         Config loader
-trading_bot/orchestration/__init__.py                Package init
-trading_bot/orchestration/bot_instance.py            Single bot lifecycle
-trading_bot/orchestration/orchestrator.py            Multi-bot coordinator
-trading_bot/portfolio/virtual_manager.py             Virtual fence + risk
-trading_bot/strategies/sigma_series/__init__.py      Strategy package
-trading_bot/strategies/sigma_series/sigma_fast.py    Momentum (93-94% target)
-trading_bot/strategies/sigma_series/sigma_alpha.py   Conservative mean-reversion
-trading_bot/strategies/sigma_series/sigma_alpha_bull.py Bull trend-following (96.25%)
+trading-automata/config/bot_config.py                    Pydantic models
+trading-automata/config/loader.py                         Config loader
+trading-automata/orchestration/__init__.py                Package init
+trading-automata/orchestration/bot_instance.py            Single bot lifecycle
+trading-automata/orchestration/orchestrator.py            Multi-bot coordinator
+trading-automata/portfolio/virtual_manager.py             Virtual fence + risk
+trading-automata/strategies/sigma_series/__init__.py      Strategy package
+trading-automata/strategies/sigma_series/sigma_fast.py    Momentum (93-94% target)
+trading-automata/strategies/sigma_series/sigma_alpha.py   Conservative mean-reversion
+trading-automata/strategies/sigma_series/sigma_alpha_bull.py Bull trend-following (96.25%)
 alembic/versions/003_add_bot_name.py                 Database migration
 config/example-bots-coinbase.yaml                    Example configurations
 config/bots/                                         Per-bot config directory
@@ -57,13 +57,13 @@ config/bots/                                         Per-bot config directory
 
 ### Modified Files (6) ✅
 ```
-trading_bot/main.py                      BOT_MODE detection + Sigma registration
-trading_bot/database/models.py           bot_name columns
-trading_bot/database/repository.py       bot_name optional parameters
-trading_bot/monitoring/event_logger.py   bot_name tagging
-trading_bot/database/health.py           bot_name in registry keys
-trading_bot/notifications/telegram_bot.py BotScopedTelegram + new commands
-trading_bot/cli.py                       Multi-bot support + new commands
+trading-automata/main.py                      BOT_MODE detection + Sigma registration
+trading-automata/database/models.py           bot_name columns
+trading-automata/database/repository.py       bot_name optional parameters
+trading-automata/monitoring/event_logger.py   bot_name tagging
+trading-automata/database/health.py           bot_name in registry keys
+trading-automata/notifications/telegram_bot.py BotScopedTelegram + new commands
+trading-automata/cli.py                       Multi-bot support + new commands
 ```
 
 ---
@@ -93,7 +93,7 @@ COINBASE_SECRET_KEY="your_secret_key"
 COINBASE_PASSPHRASE="your_passphrase"
 
 # Database
-DATABASE_URL="postgresql://user:password@localhost:5432/trading_bot_db"
+DATABASE_URL="postgresql://user:password@localhost:5432/trading-automata_db"
 
 # Telegram (optional - set dummy values if not using)
 TELEGRAM_BOT_TOKEN="dummy"
@@ -205,7 +205,7 @@ INFO [alembic.runtime.migration] Added columns to trades, positions, health_chec
 
 #### 3.2 Verify Migration
 ```bash
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT column_name FROM information_schema.columns
 WHERE table_name = 'trades' AND column_name = 'bot_name';
 EOF
@@ -219,7 +219,7 @@ EOF
 
 #### 4.1 Launch
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **Expected first output (30 seconds):**
@@ -265,14 +265,14 @@ trading-cli health
 #### 5.2 Check Database
 ```bash
 # Count signals
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT event_type, COUNT(*) FROM trading_events
 WHERE bot_name = 'test_bot'
 GROUP BY event_type;
 EOF
 
 # View trades
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT * FROM trades WHERE bot_name = 'test_bot'
 ORDER BY created_at DESC LIMIT 10;
 EOF
@@ -360,13 +360,13 @@ A: Create multiple bots with different `name` and different strategies enabled. 
 ### After Bot Starts
 ```bash
 # 1. Check bars are being received (every few seconds)
-tail -f logs/trading_bot.log | grep "bars received"
+tail -f logs/trading-automata.log | grep "bars received"
 
 # 2. Check for errors
-tail -f logs/trading_bot.log | grep ERROR
+tail -f logs/trading-automata.log | grep ERROR
 
 # 3. Check database is recording events
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT COUNT(*) FROM trading_events WHERE bot_name = 'test_bot';
 EOF
 # Should increase every minute
@@ -434,7 +434,7 @@ trading-cli health
    - `alembic upgrade 003`
 
 5. **Start the bot** (1 min)
-   - `python -m trading_bot.main`
+   - `python -m trading-automata.main`
 
 6. **Monitor for 24+ hours**
    - Check logs, database, CLI commands
@@ -455,7 +455,7 @@ trading-cli health
 - [ ] All files verified with correct paths
 
 ### Launch
-- [ ] Run: `python -m trading_bot.main`
+- [ ] Run: `python -m trading-automata.main`
 - [ ] Verify: Multi-bot mode detected
 - [ ] Verify: Broker connects
 - [ ] Verify: Bars received

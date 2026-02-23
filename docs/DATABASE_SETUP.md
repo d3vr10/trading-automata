@@ -1,6 +1,6 @@
 # PostgreSQL Database Setup
 
-Trading bot uses PostgreSQL for persistent storage of trades, positions, and performance metrics. Designed to be API-ready with raw SQL (no ORM overhead).
+TradingAutomata uses PostgreSQL for persistent storage of trades, positions, and performance metrics. Designed to be API-ready with raw SQL (no ORM overhead).
 
 ## Quick Start
 
@@ -21,9 +21,9 @@ sudo systemctl start postgresql
 **Docker (recommended):**
 ```bash
 docker run -d \
-  --name trading-bot-db \
+  --name trading-automata-db \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=trading_bot \
+  -e POSTGRES_DB=trading-automata \
   -p 5432:5432 \
   postgres:15
 ```
@@ -31,16 +31,16 @@ docker run -d \
 ### 2. Create Database
 
 ```bash
-createdb -U postgres trading_bot
+createdb -U postgres trading-automata
 # or via Docker
-docker exec trading-bot-db createdb -U postgres trading_bot
+docker exec trading-automata-db createdb -U postgres trading-automata
 ```
 
 ### 3. Initialize Schema
 
 ```bash
 # From project root
-python -m trading_bot.database.init
+python -m trading-automata.database.init
 ```
 
 Expected output:
@@ -55,21 +55,21 @@ Expected output:
 
 **Option A: Environment Variable**
 ```bash
-export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trading_bot"
-python -m trading_bot.main
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/trading-automata"
+python -m trading-automata.main
 ```
 
 **Option B: .env File**
 ```env
 # .env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trading-automata
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
 ```
 
 **Option C: Docker**
 ```bash
-docker run -e DATABASE_URL="postgresql://user:pass@host:5432/trading_bot" my-bot
+docker run -e DATABASE_URL="postgresql://user:pass@host:5432/trading-automata" my-bot
 ```
 
 ---
@@ -172,7 +172,7 @@ Indexed on: broker, checked_at
 The `TradeRepository` class provides methods for database operations:
 
 ```python
-from trading_bot.database import TradeRepository
+from trading_automata.database import TradeRepository
 import psycopg
 
 # Connect
@@ -246,7 +246,7 @@ for row in result:
 
 ```bash
 # Connect via psql
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # List recent trades
 SELECT symbol, entry_price, exit_price, pnl_percent, is_winning_trade
@@ -281,7 +281,7 @@ The database is designed to be API-ready. When you're ready to build an API:
 
 # Example FastAPI endpoint
 from fastapi import FastAPI
-from trading_bot.database import TradeRepository
+from trading_automata.database import TradeRepository
 
 app = FastAPI()
 
@@ -304,17 +304,17 @@ async def get_metrics(strategy: str, days: int = 7):
 
 ### Check Database Size
 ```bash
-psql -c "SELECT pg_size_pretty(pg_database_size('trading_bot'));"
+psql -c "SELECT pg_size_pretty(pg_database_size('trading-automata'));"
 ```
 
 ### Backup Database
 ```bash
-pg_dump -U postgres trading_bot > backup.sql
+pg_dump -U postgres trading-automata > backup.sql
 ```
 
 ### Restore Database
 ```bash
-psql -U postgres trading_bot < backup.sql
+psql -U postgres trading-automata < backup.sql
 ```
 
 ### View Recent Trades
@@ -350,13 +350,13 @@ psql -U postgres -d postgres
 # If not running, start it
 brew services start postgresql  # macOS
 sudo systemctl start postgresql # Linux
-docker start trading-bot-db      # Docker
+docker start trading-automata-db      # Docker
 ```
 
-### "database trading_bot does not exist"
+### "database trading-automata does not exist"
 ```bash
-createdb -U postgres trading_bot
-python -m trading_bot.database.init
+createdb -U postgres trading-automata
+python -m trading-automata.database.init
 ```
 
 ### Connection Pool Exhausted
@@ -369,8 +369,8 @@ DATABASE_MAX_OVERFLOW=30
 ### Slow Queries
 ```bash
 # Enable query logging in PostgreSQL
-psql -U postgres -d trading_bot
-ALTER DATABASE trading_bot SET log_min_duration_statement = 1000;
+psql -U postgres -d trading-automata
+ALTER DATABASE trading-automata SET log_min_duration_statement = 1000;
 
 # View slow queries
 SELECT query, calls, mean_exec_time
@@ -394,7 +394,7 @@ ORDER BY mean_exec_time DESC;
 
 ```env
 # Database URL (required)
-DATABASE_URL=postgresql://user:password@host:5432/trading_bot
+DATABASE_URL=postgresql://user:password@host:5432/trading-automata
 
 # Connection pool size (default: 10)
 DATABASE_POOL_SIZE=10

@@ -19,8 +19,8 @@
 
 #### Step 2: Configuration System ✅
 - **Files:**
-  - `trading_bot/config/bot_config.py` - Pydantic models for multi-bot config
-  - `trading_bot/config/loader.py` - Config loader supporting both YAML modes
+  - `trading-automata/config/bot_config.py` - Pydantic models for multi-bot config
+  - `trading-automata/config/loader.py` - Config loader supporting both YAML modes
   - `config/bots.yaml` - Example config (create from `example-bots-coinbase.yaml`)
   - `config/bots/` - Directory for per-bot configs (optional)
 - **Status:** Ready to use
@@ -28,7 +28,7 @@
 - **Next action:** Create `config/bots.yaml` from example
 
 #### Step 3: Virtual Portfolio Manager ✅
-- **File:** `trading_bot/portfolio/virtual_manager.py`
+- **File:** `trading-automata/portfolio/virtual_manager.py`
 - **Status:** Complete and tested
 - **What it does:** Enforces hard/soft fence, auto-injects SL/TP, scales positions
 - **Features:**
@@ -38,9 +38,9 @@
   - Position sizing based on allocation and risk limits
 
 #### Step 4: Bot Instance ✅
-- **File:** `trading_bot/orchestration/bot_instance.py`
+- **File:** `trading-automata/orchestration/bot_instance.py`
 - **Status:** Production-ready
-- **What it does:** Single autonomous trading bot for one broker/allocation/strategy
+- **What it does:** Single autonomous TradingAutomata platform for one broker/allocation/strategy
 - **Features:**
   - Async lifecycle: setup, start, stop, pause/resume
   - Automatic broker reconnection with exponential backoff
@@ -49,7 +49,7 @@
   - Four built-in strategies + three Sigma Series
 
 #### Step 5: Bot Orchestrator ✅
-- **File:** `trading_bot/orchestration/orchestrator.py`
+- **File:** `trading-automata/orchestration/orchestrator.py`
 - **Status:** Production-ready
 - **What it does:** Coordinates N independent bots with shared infrastructure
 - **Features:**
@@ -61,15 +61,15 @@
 
 #### Step 6: Database Updates ✅
 - **Files Modified:**
-  - `trading_bot/database/models.py` - Added bot_name columns
-  - `trading_bot/database/repository.py` - bot_name optional parameter on all methods
-  - `trading_bot/monitoring/event_logger.py` - bot_name optional parameter
-  - `trading_bot/database/health.py` - bot_name in registry keys
+  - `trading-automata/database/models.py` - Added bot_name columns
+  - `trading-automata/database/repository.py` - bot_name optional parameter on all methods
+  - `trading-automata/monitoring/event_logger.py` - bot_name optional parameter
+  - `trading-automata/database/health.py` - bot_name in registry keys
 - **Status:** Ready to use (backward compatible)
 - **What it does:** Enable multi-bot data isolation while preserving single-bot compatibility
 
 #### Step 7: Telegram Updates ✅
-- **File:** `trading_bot/notifications/telegram_bot.py` (modified)
+- **File:** `trading-automata/notifications/telegram_bot.py` (modified)
 - **Status:** Complete with new commands
 - **New commands:**
   - `/bots` - List all bots with status and virtual balance
@@ -81,7 +81,7 @@
   - `/metrics [bot_name]` - Now filters by bot
 
 #### Step 8: Main Entry Point ✅
-- **File:** `trading_bot/main.py` (modified)
+- **File:** `trading-automata/main.py` (modified)
 - **Status:** Auto-detection implemented
 - **What it does:** Detects BOT_MODE or config/bots.yaml presence
   - If found: Start BotOrchestrator (multi-bot mode)
@@ -90,10 +90,10 @@
 
 #### Step 9: Sigma Series Strategies ✅
 - **Files:**
-  - `trading_bot/strategies/sigma_series/__init__.py`
-  - `trading_bot/strategies/sigma_series/sigma_fast.py` - 93-94% win target momentum
-  - `trading_bot/strategies/sigma_series/sigma_alpha.py` - Conservative mean-reversion
-  - `trading_bot/strategies/sigma_series/sigma_alpha_bull.py` - 96.25% bull market trend
+  - `trading-automata/strategies/sigma_series/__init__.py`
+  - `trading-automata/strategies/sigma_series/sigma_fast.py` - 93-94% win target momentum
+  - `trading-automata/strategies/sigma_series/sigma_alpha.py` - Conservative mean-reversion
+  - `trading-automata/strategies/sigma_series/sigma_alpha_bull.py` - 96.25% bull market trend
 - **Status:** Production-ready
 - **What each does:**
 
@@ -122,16 +122,16 @@
 
 ### New Files (13)
 ```
-trading_bot/config/bot_config.py                    [Pydantic models]
-trading_bot/config/loader.py                         [Config loader]
-trading_bot/orchestration/__init__.py                [Package marker]
-trading_bot/orchestration/bot_instance.py            [Single bot lifecycle]
-trading_bot/orchestration/orchestrator.py            [Multi-bot coordinator]
-trading_bot/portfolio/virtual_manager.py             [Virtual fence + risk]
-trading_bot/strategies/sigma_series/__init__.py      [Package marker]
-trading_bot/strategies/sigma_series/sigma_fast.py    [Momentum strategy]
-trading_bot/strategies/sigma_series/sigma_alpha.py   [Conservative strategy]
-trading_bot/strategies/sigma_series/sigma_alpha_bull.py [Bull strategy]
+trading-automata/config/bot_config.py                    [Pydantic models]
+trading-automata/config/loader.py                         [Config loader]
+trading-automata/orchestration/__init__.py                [Package marker]
+trading-automata/orchestration/bot_instance.py            [Single bot lifecycle]
+trading-automata/orchestration/orchestrator.py            [Multi-bot coordinator]
+trading-automata/portfolio/virtual_manager.py             [Virtual fence + risk]
+trading-automata/strategies/sigma_series/__init__.py      [Package marker]
+trading-automata/strategies/sigma_series/sigma_fast.py    [Momentum strategy]
+trading-automata/strategies/sigma_series/sigma_alpha.py   [Conservative strategy]
+trading-automata/strategies/sigma_series/sigma_alpha_bull.py [Bull strategy]
 alembic/versions/003_add_bot_name.py                 [Database migration]
 config/example-bots-coinbase.yaml                    [Example config]
 config/bots/                                         [Per-bot configs dir]
@@ -139,12 +139,12 @@ config/bots/                                         [Per-bot configs dir]
 
 ### Modified Files (6)
 ```
-trading_bot/main.py                  [Added BOT_MODE detection + Sigma strategies]
-trading_bot/database/models.py       [Added bot_name columns]
-trading_bot/database/repository.py   [Added bot_name parameters]
-trading_bot/monitoring/event_logger.py [Added bot_name parameters]
-trading_bot/database/health.py       [Added bot_name to keys]
-trading_bot/notifications/telegram_bot.py [New commands + BotScopedTelegram]
+trading-automata/main.py                  [Added BOT_MODE detection + Sigma strategies]
+trading-automata/database/models.py       [Added bot_name columns]
+trading-automata/database/repository.py   [Added bot_name parameters]
+trading-automata/monitoring/event_logger.py [Added bot_name parameters]
+trading-automata/database/health.py       [Added bot_name to keys]
+trading-automata/notifications/telegram_bot.py [New commands + BotScopedTelegram]
 ```
 
 ---
@@ -267,7 +267,7 @@ Remaining unallocated: $7,000 (safe for withdrawals or manual trading)
 
 ### ✅ Step 3: Start Bot (1 min)
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 Expected first output:
@@ -281,7 +281,7 @@ Multi-bot mode detected - using BotOrchestrator
 **Reference:** [QUICK_START.md - Start the Bot](QUICK_START.md#start-the-bot-1-minute)
 
 ### ✅ Step 4: Monitor (24+ hours)
-1. [ ] Watch logs for signals: `tail -f logs/trading_bot.log`
+1. [ ] Watch logs for signals: `tail -f logs/trading-automata.log`
 2. [ ] Check database for trades: `SELECT * FROM trades WHERE bot_name='test_bot'`
 3. [ ] Monitor event log for activity
 4. [ ] Set Telegram notifications (optional but recommended)
@@ -380,7 +380,7 @@ Multi-bot mode detected - using BotOrchestrator
 
 ### Mode 1: Local Python (Development/Testing) ⭐ Recommended First
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Mode 2: Docker Compose (Production)
@@ -445,7 +445,7 @@ echo $COINBASE_API_KEY
 ### Problem: No signals generated
 **Solution:** Check event log for filter rejections
 ```bash
-psql -U trading_user -d trading_bot_db << EOF
+psql -U trading_user -d trading-automata_db << EOF
 SELECT event_type, COUNT(*) FROM trading_events
 WHERE bot_name='test_bot' GROUP BY event_type;
 EOF
@@ -455,7 +455,7 @@ EOF
 **Solution:** This is correct behavior (fence working)
 ```bash
 # Check logs
-grep "Hard fence" logs/trading_bot.log
+grep "Hard fence" logs/trading-automata.log
 ```
 
 ### Problem: Database migration failed

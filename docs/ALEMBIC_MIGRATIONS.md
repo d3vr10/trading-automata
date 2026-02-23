@@ -1,6 +1,6 @@
 # Database Migrations with Alembic
 
-This guide explains how to use Alembic for managing database schema migrations in the trading bot.
+This guide explains how to use Alembic for managing database schema migrations in the TradingAutomata platform.
 
 ## Why Alembic?
 
@@ -15,7 +15,7 @@ We use Alembic for:
 ## Project Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── alembic/
 │   ├── env.py                 # Alembic environment config
 │   ├── alembic.ini            # Alembic settings
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 Run migrations to set up initial schema:
 
 ```bash
-python -m trading_bot.database.init
+python -m trading-automata.database.init
 ```
 
 Expected output:
@@ -394,7 +394,7 @@ alembic current
 
 1. ✅ Alembic is set up
 2. ✅ Initial migration exists
-3. ✅ Database initialized with `python -m trading_bot.database.init`
+3. ✅ Database initialized with `python -m trading-automata.database.init`
 4. Next: Run the bot and it will use the migrated schema
 
 ### Adding Features Later

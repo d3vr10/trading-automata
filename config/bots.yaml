@@ -13,7 +13,7 @@
 
 # Global settings shared across all bots
 global:
-  database_url: "postgresql://postgres:postgres@postgres:5432/trading_bot"
+  database_url: "postgresql://postgres:postgres@postgres:5432/trading_automata"
   telegram_token: "${TELEGRAM_TOKEN}"
   telegram_chat_id: "${TELEGRAM_CHAT_ID}"
   telegram_username_whitelist: "your_username,another_user"
@@ -21,7 +21,7 @@ global:
   telegram_webhook_secret: ""
   telegram_webhook_port: 8080
   log_level: "INFO"
-  log_file: "logs/trading_bot.log"
+  log_file: "logs/trading_automata.log"
   database_pool_size: 10
   database_max_overflow: 20
   health_check_interval: 300

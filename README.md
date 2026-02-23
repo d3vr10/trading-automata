@@ -1,6 +1,6 @@
-# Trading Bot
+# TradingAutomata
 
-A production-grade Python trading bot with **multi-broker support** (Alpaca & Coinbase). Features clean architecture with strategy framework, event logging, database persistence, and Docker deployment.
+A production-grade Python TradingAutomata platform with **multi-broker support** (Alpaca & Coinbase). Features clean architecture with strategy framework, event logging, database persistence, and Docker deployment.
 
 ## Features
 
@@ -37,7 +37,7 @@ docker-compose up
 ### 1. Clone and Setup
 
 ```bash
-cd trading-bot
+cd trading-automata
 ```
 
 ### 2. Install Dependencies
@@ -54,28 +54,28 @@ Choose one of these methods:
 ```bash
 export ALPACA_API_KEY="your_key"
 export ALPACA_SECRET_KEY="your_secret"
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **Option B: .env File**
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **Option C: config.yml + Environment Variables**
 ```bash
 # Edit config/config.yml for defaults
 # Create .env for overrides
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### 4. Configure Database (Optional)
 
 ```bash
 # Create PostgreSQL database
-createdb trading_bot
+createdb trading-automata
 
 # Run migrations
 alembic upgrade head
@@ -110,25 +110,25 @@ strategies:
 ### 6. Run the Bot
 
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 Monitor logs:
 ```bash
-tail -f logs/trading_bot.log
+tail -f logs/trading-automata.log
 ```
 
 Check bot status with CLI:
 ```bash
-python -m trading_bot.cli status              # Overall status
-python -m trading_bot.cli trades              # Trade history
-python -m trading_bot.cli events --limit 50   # Recent events
+python -m trading-automata.cli status              # Overall status
+python -m trading-automata.cli trades              # Trade history
+python -m trading-automata.cli events --limit 50   # Recent events
 ```
 
 ## Project Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── docker/                       # Docker setup
 │   ├── Dockerfile              # Container image
 │   ├── docker-compose.yml      # Docker Compose config
@@ -145,7 +145,7 @@ trading-bot/
 │   ├── DOCKER_SETUP.md         # Docker Compose deployment
 │   ├── TELEGRAM_SETUP.md       # Telegram notifications
 │   └── EUR_USD_STRATEGY.md     # EUR/USD strategy example
-├── trading_bot/                 # Main package
+├── trading-automata/                 # Main package
 │   ├── main.py                 # Bot orchestrator
 │   ├── cli.py                  # Command-line interface
 │   ├── brokers/
@@ -221,7 +221,7 @@ TRADING_ENV=live
 ```bash
 # Result
 export LOG_LEVEL=CRITICAL
-python -m trading_bot.main
+python -m trading-automata.main
 # trading_environment: live (from .env overrides config.yml)
 # log_level: CRITICAL (from environment overrides .env)
 ```
@@ -286,10 +286,10 @@ Change configuration without touching code:
 
 ```bash
 # Paper trading
-TRADING_ENV=paper python -m trading_bot.main
+TRADING_ENV=paper python -m trading-automata.main
 
 # Live trading (use live credentials!)
-TRADING_ENV=live python -m trading_bot.main
+TRADING_ENV=live python -m trading-automata.main
 ```
 
 Or edit `.env`:
@@ -310,8 +310,8 @@ ALPACA_SECRET_KEY=...
 Create a new strategy by inheriting from `BaseStrategy`:
 
 ```python
-from trading_bot.strategies.base import BaseStrategy, Signal
-from trading_bot.data.models import Bar, Quote
+from trading-automata.strategies.base import BaseStrategy, Signal
+from trading-automata.data.models import Bar, Quote
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
@@ -344,7 +344,7 @@ Register your strategy in `src/main.py`:
 ```python
 def _register_strategies(self) -> None:
     # ... existing registrations
-    from trading_bot.strategies.examples.my_strategy import MyStrategy
+    from trading-automata.strategies.examples.my_strategy import MyStrategy
     StrategyRegistry.register('MyStrategy', MyStrategy)
 ```
 
@@ -412,7 +412,7 @@ Configure log level in `.env`:
 
 ```env
 LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_FILE=logs/trading_bot.log
+LOG_FILE=logs/trading-automata.log
 ```
 
 ## Monitoring
@@ -421,7 +421,7 @@ LOG_FILE=logs/trading_bot.log
 
 ```bash
 # Watch log file in real-time
-tail -f logs/trading_bot.log
+tail -f logs/trading-automata.log
 ```
 
 ### CLI Commands
@@ -430,22 +430,22 @@ The bot includes a command-line interface for checking status and debugging:
 
 ```bash
 # Overall bot status
-python -m trading_bot.cli status
+python -m trading-automata.cli status
 
 # View recent trades
-python -m trading_bot.cli trades --limit 10
+python -m trading-automata.cli trades --limit 10
 
 # View trading events and decisions
-python -m trading_bot.cli events --limit 50
+python -m trading-automata.cli events --limit 50
 
 # View specific event types
-python -m trading_bot.cli events --type BAR_RECEIVED --symbol SPY
+python -m trading-automata.cli events --type BAR_RECEIVED --symbol SPY
 
 # View performance metrics
-python -m trading_bot.cli metrics
+python -m trading-automata.cli metrics
 
 # Check database health
-python -m trading_bot.cli health
+python -m trading-automata.cli health
 ```
 
 ### Web Dashboards

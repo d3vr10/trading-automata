@@ -23,7 +23,7 @@ Complete this checklist before deploying to live trading on Coinbase.
 
 ### Code & Dependencies
 - [ ] Python dependencies installed: `pip install -r requirements.txt`
-- [ ] Orchestrator imports correctly: `python -c "from trading_bot.orchestration.orchestrator import BotOrchestrator"`
+- [ ] Orchestrator imports correctly: `python -c "from trading-automata.orchestration.orchestrator import BotOrchestrator"`
 - [ ] All Sigma Series strategies importable
 - [ ] No import errors in terminal
 
@@ -32,7 +32,7 @@ Complete this checklist before deploying to live trading on Coinbase.
 ## Phase 2: Local Test Run (30 Minutes)
 
 ### Startup
-- [ ] Bot starts without errors: `python -m trading_bot.main`
+- [ ] Bot starts without errors: `python -m trading-automata.main`
 - [ ] Output shows "Multi-bot mode detected - using BotOrchestrator"
 - [ ] No exceptions in first 10 seconds
 - [ ] Telegram notification received (if configured): "[bot_name] Connected to Coinbase broker"

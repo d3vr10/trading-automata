@@ -20,7 +20,7 @@ if config.config_file_name is not None:
 # Set sqlalchemy.url from environment variable
 database_url = os.getenv(
     'DATABASE_URL',
-    'postgresql://postgres:postgres@localhost:5432/trading_bot'
+    'postgresql://postgres:postgres@localhost:5432/trading_automata'
 )
 config.set_main_option("sqlalchemy.url", database_url)
 

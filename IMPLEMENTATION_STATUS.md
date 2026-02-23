@@ -139,7 +139,7 @@ database_max_overflow: int      # Max overflow connections (default: 20)
 
 **Environment Variable Support:**
 ```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/trading_bot
+DATABASE_URL=postgresql://user:pass@localhost:5432/trading-automata
 DATABASE_POOL_SIZE=10
 DATABASE_MAX_OVERFLOW=20
 ```
@@ -329,7 +329,7 @@ On exit → save final checks
 ### Pre-Launch Checklist
 
 - [ ] PostgreSQL running and accessible
-- [ ] Database schema initialized (`python -m trading_bot.database.init`)
+- [ ] Database schema initialized (`python -m trading-automata.database.init`)
 - [ ] .env configured with correct DATABASE_URL
 - [ ] Broker credentials configured (ALPACA_API_KEY, etc.)
 - [ ] Test database connection works (`psql ...`)
@@ -485,12 +485,12 @@ On exit → save final checks
 
 1. **Check Logs:**
    ```bash
-   tail -f /tmp/trading_bot.log
+   tail -f /tmp/trading-automata.log
    ```
 
 2. **Database Connection:**
    ```bash
-   psql postgresql://postgres:postgres@localhost:5432/trading_bot
+   psql postgresql://postgres:postgres@localhost:5432/trading-automata
    ```
 
 3. **Check Docs:**
@@ -503,7 +503,7 @@ On exit → save final checks
 | Issue | Solution |
 |-------|----------|
 | DB connection refused | Start PostgreSQL, check DATABASE_URL |
-| Table doesn't exist | Run `python -m trading_bot.database.init` |
+| Table doesn't exist | Run `python -m trading-automata.database.init` |
 | Health checks not saving | Check database permissions, connection |
 | No trades recorded | Check strategy is generating signals |
 | Stale data warning | Check WebSocket connection to broker |
@@ -518,7 +518,7 @@ On exit → save final checks
 ✅ Persistent trade history and analytics
 ✅ Real-time health monitoring
 ✅ Automatic error tracking
-✅ Full integration with trading bot
+✅ Full integration with TradingAutomata platform
 ✅ Comprehensive documentation
 ✅ Ready for paper and live trading
 
@@ -546,7 +546,7 @@ On exit → save final checks
 
 All Week 1 production features implemented and integrated.
 
-**Start trading:** `python -m trading_bot.main`
+**Start trading:** `python -m trading-automata.main`
 
 Questions? Check the documentation files or review the code.
 

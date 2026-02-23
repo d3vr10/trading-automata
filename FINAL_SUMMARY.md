@@ -1,8 +1,8 @@
-# Trading Bot - Final Implementation Summary (Feb 2026)
+# TradingAutomata - Final Implementation Summary (Feb 2026)
 
 ## What You Have
 
-A **production-grade, fully-functional trading bot** with:
+A **production-grade, fully-functional TradingAutomata platform** with:
 
 ### ✅ Complete Components
 - **Broker Abstraction**: Support for Alpaca (extensible for other brokers)
@@ -37,7 +37,7 @@ A professional strategy ready for live trading:
 ## File Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── 📦 Docker Support
 │   ├── docker/Dockerfile
 │   ├── docker/docker-compose.yml
@@ -81,7 +81,7 @@ trading-bot/
 ### Precedence (Highest to Lowest)
 1. **OS Environment Variables** - Highest priority
    ```bash
-   TRADING_ENV=live python -m trading_bot.main
+   TRADING_ENV=live python -m trading-automata.main
    ```
 
 2. **.env File** - Second priority
@@ -150,7 +150,7 @@ docker-compose logs -f
 docker-compose logs --tail=100
 
 # Specific service
-docker-compose logs -f trading-bot
+docker-compose logs -f trading-automata
 ```
 
 ## EUR/USD Strategy
@@ -213,10 +213,10 @@ position_size: 5
 ### Method 1: Environment Variable
 ```bash
 # Paper
-TRADING_ENV=paper python -m trading_bot.main
+TRADING_ENV=paper python -m trading-automata.main
 
 # Live
-TRADING_ENV=live python -m trading_bot.main
+TRADING_ENV=live python -m trading-automata.main
 ```
 
 ### Method 2: .env File
@@ -235,7 +235,7 @@ cd docker
 TRADING_ENV=live
 ALPACA_API_KEY=pk_...  # Live credentials
 
-docker-compose restart trading-bot
+docker-compose restart trading-automata
 ```
 
 ⚠️ **IMPORTANT**: Paper and live trading use **different API credentials**!
@@ -252,7 +252,7 @@ cp .env.example .env
 nano .env  # Add dev credentials
 
 # Run
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Scenario 2: Docker Development
@@ -274,7 +274,7 @@ export LOG_LEVEL="INFO"
 export MAX_POSITION_SIZE="0.05"  # Conservative
 
 # Run with monitoring
-python -m trading_bot.main &> logs/trading_bot.log &
+python -m trading-automata.main &> logs/trading-automata.log &
 ```
 
 ### Scenario 4: Docker Production
@@ -285,7 +285,7 @@ docker run \
   -e ALPACA_SECRET_KEY="live_secret" \
   -e TRADING_ENV="live" \
   -v /host/logs:/app/logs \
-  trading-bot
+  trading-automata
 ```
 
 ## Monitoring the Bot
@@ -299,22 +299,22 @@ docker-compose ps
 docker-compose logs -f
 
 # Resource usage
-docker stats trading-bot
+docker stats trading-automata
 
 # Check health
-docker-compose exec trading-bot curl http://localhost:8000/health
+docker-compose exec trading-automata curl http://localhost:8000/health
 ```
 
 ### Local Monitoring
 ```bash
 # Watch logs
-tail -f logs/trading_bot.log
+tail -f logs/trading-automata.log
 
 # Count trades per hour
-grep "SELL EXIT\|BUY EXIT" logs/trading_bot.log | wc -l
+grep "SELL EXIT\|BUY EXIT" logs/trading-automata.log | wc -l
 
 # Check daily P&L
-grep "profit" logs/trading_bot.log
+grep "profit" logs/trading-automata.log
 ```
 
 ### Alpaca Dashboard
@@ -332,8 +332,8 @@ Check:
 ### 1. Create Strategy File
 ```python
 # src/strategies/examples/my_strategy.py
-from trading_bot.strategies.base import BaseStrategy, Signal
-from trading_bot.data.models import Bar, Quote
+from trading-automata.strategies.base import BaseStrategy, Signal
+from trading-automata.data.models import Bar, Quote
 from typing import Optional, Dict, Any
 from decimal import Decimal
 
@@ -362,7 +362,7 @@ class MyStrategy(BaseStrategy):
 ### 2. Register Strategy
 ```python
 # src/main.py, in _register_strategies()
-from trading_bot.strategies.examples.my_strategy import MyStrategy
+from trading-automata.strategies.examples.my_strategy import MyStrategy
 StrategyRegistry.register('MyStrategy', MyStrategy)
 ```
 
@@ -384,9 +384,9 @@ strategies:
 ### Bot Won't Start
 ```bash
 # Check logs
-docker-compose logs trading-bot
+docker-compose logs trading-automata
 # or
-tail logs/trading_bot.log
+tail logs/trading-automata.log
 
 # Common issues:
 # 1. Missing credentials: Set ALPACA_API_KEY
@@ -399,10 +399,10 @@ tail logs/trading_bot.log
 # 1. Check if strategy enabled in config/strategies.yaml
 # 2. Verify market is open (US trading hours)
 # 3. Check logs for strategy errors
-tail -f logs/trading_bot.log | grep ERROR
+tail -f logs/trading-automata.log | grep ERROR
 
 # 4. Verify position can be sized:
-docker-compose exec trading-bot python
+docker-compose exec trading-automata python
 >>> from config.settings import load_settings
 >>> s = load_settings()
 >>> print(s.max_position_size)

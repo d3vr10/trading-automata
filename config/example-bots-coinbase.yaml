@@ -27,7 +27,7 @@ global:
 
   # Logging
   log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  log_file: "logs/trading_bot.log"
+  log_file: "logs/trading_automata.log"
 
   # Health checks
   health_check_interval: 300  # seconds (5 minutes)
@@ -261,7 +261,7 @@ bots:
 #    - ALPACA_SECRET_KEY=xxx (for market data)
 #
 # 5. VERIFY CONFIGURATION
-#    Run: python -c "from trading_bot.config.loader import load_bot_configs; load_bot_configs()"
+#    Run: python -c "from trading_automata.config.loader import load_bot_configs; load_bot_configs()"
 #    Should show no errors
 #
 # 6. RUN DATABASE MIGRATION
@@ -269,7 +269,7 @@ bots:
 #    This adds bot_name columns needed for multi-bot tracking
 #
 # 7. START BOT
-#    python -m trading_bot.main
+#    python -m trading_automata.main
 #    Should show: "Multi-bot mode detected - using BotOrchestrator"
 #
 # 8. MONITOR TELEGRAM (recommended)

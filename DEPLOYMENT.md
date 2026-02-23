@@ -2,7 +2,7 @@
 
 ## What Was Built
 
-A production-grade trading bot with:
+A production-grade TradingAutomata platform with:
 - ✅ Docker containerization
 - ✅ Flexible configuration (YAML + environment variables)
 - ✅ Professional EUR/USD strategy ready for Feb 2026
@@ -33,14 +33,14 @@ The bot uses a **3-level configuration hierarchy** with environment variables ha
 
 ### Level 1: Environment Variables (Highest Priority)
 ```bash
-TRADING_ENV=live ALPACA_API_KEY=pk_... python -m trading_bot.main
+TRADING_ENV=live ALPACA_API_KEY=pk_... python -m trading-automata.main
 ```
 
 ### Level 2: .env File
 ```bash
 cp .env.example .env
 # Edit .env with your credentials
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Level 3: config.yml File
@@ -136,7 +136,7 @@ ALPACA_SECRET_KEY=...
 ## Project Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── docker/                    # Docker setup (NEW)
 │   ├── Dockerfile
 │   ├── docker-compose.yml
@@ -178,7 +178,7 @@ docker-compose logs -f
 pip install -r requirements.txt
 cp .env.example .env
 nano .env  # Add credentials
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Option 3: With config.yml
@@ -186,7 +186,7 @@ python -m trading_bot.main
 # Edit config/config.yml for defaults
 # Edit .env for overrides
 # Environment variables override everything
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ## Monitoring
@@ -210,16 +210,16 @@ Look for these success indicators:
 ### Docker Logs
 ```bash
 # View real-time logs
-docker-compose logs -f trading-bot
+docker-compose logs -f trading-automata
 
 # View last 50 lines
-docker-compose logs --tail 50 trading-bot
+docker-compose logs --tail 50 trading-automata
 
 # Follow specific events
-docker-compose logs -f trading-bot | grep -E "Signal|Trade|Order"
+docker-compose logs -f trading-automata | grep -E "Signal|Trade|Order"
 
 # Check startup progress
-docker-compose logs trading-bot | grep -E "setup|complete|Trading loop"
+docker-compose logs trading-automata | grep -E "setup|complete|Trading loop"
 ```
 
 ### Container Status
@@ -228,22 +228,22 @@ docker-compose logs trading-bot | grep -E "setup|complete|Trading loop"
 docker-compose ps
 
 # Check resources
-docker stats trading-bot
+docker stats trading-automata
 
 # View container details
-docker inspect trading-bot
+docker inspect trading-automata
 ```
 
 ### Local Python Logs
 ```bash
 # View logs
-tail -f logs/trading_bot.log
+tail -f logs/trading-automata.log
 
 # Monitor performance
-watch -n 5 'tail logs/trading_bot.log'
+watch -n 5 'tail logs/trading-automata.log'
 
 # Search for patterns
-grep "Signal\|Trade\|Error" logs/trading_bot.log
+grep "Signal\|Trade\|Error" logs/trading-automata.log
 ```
 
 ### Broker Dashboards
@@ -257,9 +257,9 @@ grep "Signal\|Trade\|Error" logs/trading_bot.log
 
 Check logs:
 ```bash
-docker-compose logs trading-bot
+docker-compose logs trading-automata
 # or
-tail logs/trading_bot.log
+tail logs/trading-automata.log
 ```
 
 Common issues:

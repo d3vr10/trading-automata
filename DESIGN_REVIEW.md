@@ -298,13 +298,13 @@ Monitor these key areas:
 ## Summary of Changes
 
 ### Files Modified
-1. **trading_bot/notifications/telegram_bot.py**
+1. **trading-automata/notifications/telegram_bot.py**
    - Fixed 3 authorization check calls (lines 1854, 1879, 1900)
    - Fixed 4 database.get_session() → session_factory() calls
    - Added 3 multi-bot commands to _set_commands()
    - Updated /help message with multi-bot section
 
-2. **trading_bot/cli.py**
+2. **trading-automata/cli.py**
    - Fixed Windows incompatibility in watch_command()
    - Added cross-platform clear screen logic
 

@@ -1,4 +1,4 @@
-# Trading Bot System - Comprehensive Index
+# TradingAutomata System - Comprehensive Index
 
 **Last Updated:** February 23, 2026
 **System Version:** 0.4.1 (Enhanced Logging & Monitoring)
@@ -60,7 +60,7 @@
 
 ### What Is This System?
 
-A **production-ready multi-bot trading system** that runs multiple independent trading bots concurrently on cryptocurrency exchanges. Each bot:
+A **production-ready multi-bot trading system** that runs multiple independent TradingAutomata platforms concurrently on cryptocurrency exchanges. Each bot:
 
 - Connects independently to a broker (Coinbase, Alpaca, etc.)
 - Runs its own trading strategy (Sigma Series or custom)
@@ -154,7 +154,7 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 ## Key Components
 
 ### 1. BotOrchestrator 🎭
-**Location:** [trading_bot/orchestration/orchestrator.py](trading_bot/orchestration/orchestrator.py)
+**Location:** [trading-automata/orchestration/orchestrator.py](trading-automata/orchestration/orchestrator.py)
 
 **Purpose:** Master controller for multi-bot system
 - Loads configuration from `config/bots.yaml`
@@ -170,9 +170,9 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 - `pause_bot(name)` / `resume_bot(name)` - Individual bot control
 
 ### 2. BotInstance 🤖
-**Location:** [trading_bot/orchestration/bot_instance.py](trading_bot/orchestration/bot_instance.py)
+**Location:** [trading-automata/orchestration/bot_instance.py](trading-automata/orchestration/bot_instance.py)
 
-**Purpose:** Single autonomous trading bot
+**Purpose:** Single autonomous TradingAutomata platform
 - Manages one broker connection
 - Runs trading loop: poll bars → analyze signals → execute orders
 - Holds one VirtualPortfolioManager (capital allocation)
@@ -186,7 +186,7 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 - `_process_bar()` - Handle incoming market data
 
 ### 3. VirtualPortfolioManager 💼
-**Location:** [trading_bot/portfolio/virtual_manager.py](trading_bot/portfolio/virtual_manager.py)
+**Location:** [trading-automata/portfolio/virtual_manager.py](trading-automata/portfolio/virtual_manager.py)
 
 **Purpose:** Capital allocation & risk management per bot
 - Tracks allocated capital vs. virtual spent/proceeds
@@ -207,7 +207,7 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 - `calculate_position_size(capital, risk%)` - Sizing logic
 
 ### 4. Strategies 📈
-**Location:** [trading_bot/strategies/](trading_bot/strategies/)
+**Location:** [trading-automata/strategies/](trading-automata/strategies/)
 
 #### Sigma Series (New - 3 Strategies)
 
@@ -236,7 +236,7 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 - Event logging for debugging
 
 ### 5. Database Layer 🗄️
-**Location:** [trading_bot/database/](trading_bot/database/)
+**Location:** [trading-automata/database/](trading-automata/database/)
 
 **Models:**
 - `Trade` - Entry/exit details, P&L, strategy, bot_name
@@ -256,7 +256,7 @@ Query: SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 - Backward compatible with legacy single-bot system
 
 ### 6. Configuration System ⚙️
-**Location:** [trading_bot/config/](trading_bot/config/)
+**Location:** [trading-automata/config/](trading-automata/config/)
 
 **Files:**
 - `bot_config.py` - Pydantic models with validation
@@ -288,7 +288,7 @@ bots:
 ```
 
 ### 7. Monitoring: CLI 💻
-**Location:** [trading_bot/cli.py](trading_bot/cli.py)
+**Location:** [trading-automata/cli.py](trading-automata/cli.py)
 
 **20+ Commands:**
 - Status commands (status, health, uptime)
@@ -305,7 +305,7 @@ bots:
 - Cross-platform (Windows, Linux, macOS)
 
 ### 8. Monitoring: Telegram 🤖
-**Location:** [trading_bot/notifications/telegram_bot.py](trading_bot/notifications/telegram_bot.py)
+**Location:** [trading-automata/notifications/telegram_bot.py](trading-automata/notifications/telegram_bot.py)
 
 **15+ Commands:**
 - Status & portfolio (status, trades, metrics)
@@ -424,7 +424,7 @@ All fixed on Feb 22, 2026 ([commit 2cc6bc4](https://github.com/...)):
 ## File Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── INDEX.md                                     ← Comprehensive reference (START HERE)
 ├── QUICK_START.md                               ← 1-hour deployment guide
 ├── IMPLEMENTATION_COMPLETE.md                   ← 5-phase workflow
@@ -442,7 +442,7 @@ trading-bot/
 │   ├── bots.yaml                                ← Main config (CREATE THIS)
 │   └── bots/                                    ← Per-bot configs (optional)
 │
-├── trading_bot/
+├── trading-automata/
 │   ├── main.py                                  ← Entry point with mode detection
 │   ├── cli.py                                   ← 20+ CLI commands
 │   │
@@ -519,7 +519,7 @@ trading-bot/
 │   └── .env.prod                                ← Production environment
 │
 ├── logs/                                        ← Runtime logs
-│   └── trading_bot.log
+│   └── trading-automata.log
 │
 ├── requirements.txt                             ← Python dependencies
 ├── pyproject.toml                               ← Project metadata
@@ -681,7 +681,7 @@ cat > .env << 'EOF'
 COINBASE_API_KEY="your_api_key"
 COINBASE_SECRET_KEY="your_secret_key"
 COINBASE_PASSPHRASE="your_passphrase"
-DATABASE_URL="postgresql://user:password@localhost:5432/trading_bot_db"
+DATABASE_URL="postgresql://user:password@localhost:5432/trading-automata_db"
 BOT_MODE="multi"
 TELEGRAM_BOT_TOKEN="your_token_or_dummy"
 TELEGRAM_CHAT_ID="12345"
@@ -701,7 +701,7 @@ alembic upgrade 003
 
 **5. Start Bot (30 sec)**
 ```bash
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 ### Full Deployment (< 1 hour)
@@ -893,8 +893,8 @@ trading-cli metrics --bot alpha_bot
 ### Log Locations
 
 ```bash
-logs/trading_bot.log          # Main application log
-docker logs trading_bot        # Docker container log (if using Docker)
+logs/trading-automata.log          # Main application log
+docker logs trading-automata        # Docker container log (if using Docker)
 ```
 
 ---
@@ -961,7 +961,7 @@ SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 
 ### Code Organization
 
-- `trading_bot/` - Core application
+- `trading-automata/` - Core application
 - `tests/` - Test suite
 - `config/` - Configuration files
 - `alembic/` - Database migrations
@@ -980,7 +980,7 @@ SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 
 ## License & Attribution
 
-**Project:** Trading Bot System
+**Project:** TradingAutomata System
 **Version:** 0.4.0 (Multi-Bot Orchestration)
 **Status:** Production Ready
 **Last Updated:** February 22, 2026
@@ -989,7 +989,7 @@ SELECT * FROM trades WHERE bot_name = 'alpha_bot'
 
 ## Summary
 
-This trading bot system is a **production-ready multi-bot trading platform** that:
+This TradingAutomata platform system is a **production-ready multi-bot trading platform** that:
 
 ✅ Runs multiple independent bots simultaneously
 ✅ Manages capital allocation with safety fences

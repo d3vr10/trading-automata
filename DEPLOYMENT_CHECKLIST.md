@@ -1,6 +1,6 @@
 # Deployment Checklist
 
-Complete checklist for deploying trading bot from development → paper trading → live trading.
+Complete checklist for deploying TradingAutomata platform from development → paper trading → live trading.
 
 ## Pre-Deployment (Before Any Trading)
 
@@ -23,7 +23,7 @@ Complete checklist for deploying trading bot from development → paper trading 
 
 ### Code & Configuration
 
-- [ ] Trading bot source code cloned/downloaded
+- [ ] TradingAutomata source code cloned/downloaded
 - [ ] `.env.example` copied to `.env`
 - [ ] All required fields in `.env` filled with valid values
 - [ ] `TRADING_ENV=paper` set for testing
@@ -34,10 +34,10 @@ Complete checklist for deploying trading bot from development → paper trading 
 ### Initial Run
 
 - [ ] `docker-compose up -d` completes successfully
-- [ ] Both `postgres` and `trading-bot` containers running
+- [ ] Both `postgres` and `trading-automata` containers running
 - [ ] Telegram bot receives startup message
 - [ ] `/status` command works in Telegram
-- [ ] Logs show no errors: `docker logs trading-bot | grep ERROR`
+- [ ] Logs show no errors: `docker logs trading-automata | grep ERROR`
 - [ ] Database connected: `SELECT 1 FROM health_checks` works
 
 ---
@@ -102,7 +102,7 @@ cp .env .env.live
 # Edit .env.live with live credentials
 
 # Test connection only
-docker exec trading-bot python -c \
+docker exec trading-automata python -c \
   "from config.settings import load_settings; s = load_settings(); print(f'Broker: {s.broker}')"
 ```
 
@@ -133,8 +133,8 @@ docker exec trading-bot python -c \
 ### First Day
 
 - [ ] Switch `TRADING_ENV=live` in `.env`
-- [ ] Restarted bot: `docker-compose restart trading-bot`
-- [ ] Checked logs: `docker logs trading-bot | grep -i live`
+- [ ] Restarted bot: `docker-compose restart trading-automata`
+- [ ] Checked logs: `docker logs trading-automata | grep -i live`
 - [ ] First trade verified (check `/trades` in Telegram)
 - [ ] Trade executed successfully
 - [ ] Position monitoring works
@@ -172,7 +172,7 @@ docker exec trading-bot python -c \
 
 - [ ] Check Telegram alerts (trades received)
 - [ ] Monitor `/metrics` for win rate
-- [ ] Check logs for errors: `docker logs trading-bot | grep -i error`
+- [ ] Check logs for errors: `docker logs trading-automata | grep -i error`
 - [ ] Verify portfolio health
 
 ### Weekly Tasks
@@ -181,7 +181,7 @@ docker exec trading-bot python -c \
 - [ ] Check database performance: `docker stats`
 - [ ] Backup database:
   ```bash
-  docker exec trading-bot-db pg_dump -U postgres -d trading_bot > backup_$(date +%Y%m%d).sql
+  docker exec trading-automata-db pg_dump -U postgres -d trading-automata > backup_$(date +%Y%m%d).sql
   ```
 - [ ] Review father's feedback
 
@@ -205,7 +205,7 @@ docker exec trading-bot python -c \
 - [ ] Decide: resume or adjust strategy
 
 **If Bot Crashes:**
-- [ ] Check logs: `docker logs trading-bot`
+- [ ] Check logs: `docker logs trading-automata`
 - [ ] Check database: `docker logs postgres`
 - [ ] Restart: `docker-compose restart`
 - [ ] Verify all positions closed safely
@@ -219,7 +219,7 @@ docker exec trading-bot python -c \
 **If Telegram Not Working:**
 - [ ] Check token in `.env`
 - [ ] Check chat ID
-- [ ] Restart bot: `docker-compose restart trading-bot`
+- [ ] Restart bot: `docker-compose restart trading-automata`
 - [ ] Test: `/help` in Telegram
 
 ---
@@ -233,7 +233,7 @@ docker exec trading-bot python -c \
 docker stats
 
 # Should see:
-# trading-bot: <50% CPU, ~200-300MB memory
+# trading-automata: <50% CPU, ~200-300MB memory
 # postgres: <30% CPU, ~100-200MB memory
 ```
 
@@ -245,8 +245,8 @@ docker stats
 
 ```bash
 # Check database size
-docker exec trading-bot-db psql -U postgres -d trading_bot \
-  -c "SELECT pg_size_pretty(pg_database_size('trading_bot'))"
+docker exec trading-automata-db psql -U postgres -d trading-automata \
+  -c "SELECT pg_size_pretty(pg_database_size('trading-automata'))"
 ```
 
 - [ ] Database size <1GB
@@ -265,7 +265,7 @@ docker exec trading-bot-db psql -U postgres -d trading_bot \
 
 ```bash
 # Logs are automatically rotated (10MB max per file, 3 files)
-docker-compose logs --tail=100 trading-bot
+docker-compose logs --tail=100 trading-automata
 ```
 
 - [ ] Logs are clean (no spam)
@@ -283,8 +283,8 @@ docker-compose logs --tail=100 trading-bot
 4. [ ] Review changes: `git diff`
 5. [ ] Rebuild image: `docker-compose build`
 6. [ ] Start bot: `docker-compose up -d`
-7. [ ] Run migrations: `docker exec trading-bot alembic upgrade head`
-8. [ ] Verify: `docker logs trading-bot | head -20`
+7. [ ] Run migrations: `docker exec trading-automata alembic upgrade head`
+8. [ ] Verify: `docker logs trading-automata | head -20`
 9. [ ] Test in Telegram: `/status`
 
 ---
@@ -334,7 +334,7 @@ Only use if database is corrupted. Restore from backup afterward.
 
 ```bash
 # Always backup before shutdown
-docker exec trading-bot-db pg_dump -U postgres -d trading_bot > final_backup.sql
+docker exec trading-automata-db pg_dump -U postgres -d trading-automata > final_backup.sql
 ```
 
 - [ ] Final backup created
@@ -376,13 +376,13 @@ docker exec trading-bot-db pg_dump -U postgres -d trading_bot > final_backup.sql
 | Stop | `docker-compose -f docker/docker-compose.yml down` |
 | Logs | `docker-compose -f docker/docker-compose.yml logs -f` |
 | Status | `docker-compose -f docker/docker-compose.yml ps` |
-| Backup | `docker exec trading-bot-db pg_dump -U postgres -d trading_bot > backup.sql` |
+| Backup | `docker exec trading-automata-db pg_dump -U postgres -d trading-automata > backup.sql` |
 | Restart | `docker-compose -f docker/docker-compose.yml restart` |
 
 ### Contact & Support
 
 - **Logs Location:** Printed to console, also in `logs/`
-- **Database Access:** `psql postgresql://postgres:postgres@localhost:5432/trading_bot`
+- **Database Access:** `psql postgresql://postgres:postgres@localhost:5432/trading-automata`
 - **Telegram Support:** Check `docs/TELEGRAM_SETUP.md`
 - **Documentation:** See project `docs/` folder
 

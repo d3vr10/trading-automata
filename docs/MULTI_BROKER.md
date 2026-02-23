@@ -2,7 +2,7 @@
 
 ## Overview
 
-Your trading bot supports **multiple brokers** with the same strategy code. Switch between brokers without any code changes—just update your configuration!
+Your TradingAutomata platform supports **multiple brokers** with the same strategy code. Switch between brokers without any code changes—just update your configuration!
 
 **Supported Brokers:**
 - **Alpaca**: Stocks, options, crypto, forex (paper & live)
@@ -90,7 +90,7 @@ ALPACA_SECRET_KEY=...
 # Run bot
 docker-compose up
 # or
-python -m trading_bot.main
+python -m trading-automata.main
 ```
 
 **What Happens:**
@@ -407,7 +407,7 @@ MAX_PORTFOLIO_RISK=0.01 # 1% daily max loss
 version: '3.8'
 
 services:
-  trading-bot-alpaca:
+  trading-automata-alpaca:
     build: .
     env_file:
       - docker/.env.alpaca
@@ -416,7 +416,7 @@ services:
     ports:
       - "8001:8000"
 
-  trading-bot-coinbase:
+  trading-automata-coinbase:
     build: .
     env_file:
       - docker/.env.coinbase
@@ -429,10 +429,10 @@ services:
 **Monitor Both:**
 ```bash
 # View Alpaca logs
-docker-compose -f docker-compose-multi.yml logs -f trading-bot-alpaca
+docker-compose -f docker-compose-multi.yml logs -f trading-automata-alpaca
 
 # View Coinbase logs
-docker-compose -f docker-compose-multi.yml logs -f trading-bot-coinbase
+docker-compose -f docker-compose-multi.yml logs -f trading-automata-coinbase
 ```
 
 ---
@@ -454,7 +454,7 @@ docker-compose -f docker-compose-multi.yml logs -f trading-bot-coinbase
 
 1. **Test on Alpaca Paper:**
    ```bash
-   BROKER=alpaca TRADING_ENV=paper python -m trading_bot.main
+   BROKER=alpaca TRADING_ENV=paper python -m trading-automata.main
    ```
 
 2. **Run for 2+ weeks:**
@@ -468,7 +468,7 @@ docker-compose -f docker-compose-multi.yml logs -f trading-bot-coinbase
 
 4. **Switch to Coinbase Live:**
    ```bash
-   BROKER=coinbase TRADING_ENV=live COINBASE_API_KEY=... python -m trading_bot.main
+   BROKER=coinbase TRADING_ENV=live COINBASE_API_KEY=... python -m trading-automata.main
    ```
 
 **Ready to scale your trading across platforms!** 🚀

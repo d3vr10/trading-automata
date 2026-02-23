@@ -1,11 +1,11 @@
 # Docker Setup Guide
 
-Run the entire trading bot stack (bot + PostgreSQL database) with Docker Compose.
+Run the entire TradingAutomata platform stack (bot + PostgreSQL database) with Docker Compose.
 
 ## Overview
 
 The Docker setup includes:
-- **trading-bot** - Trading bot application
+- **trading-automata** - TradingAutomata application
 - **postgres** - PostgreSQL 15 database
 - **trading-network** - Internal network for communication
 - **postgres_data** - Persistent volume for database
@@ -14,7 +14,7 @@ The Docker setup includes:
 
 - Docker installed ([download](https://www.docker.com/products/docker-desktop))
 - Docker Compose (included with Docker Desktop)
-- Trading bot source code
+- TradingAutomata source code
 
 ## Quick Start (5 minutes)
 
@@ -43,7 +43,7 @@ TRADING_ENV=paper
 docker-compose -f docker/docker-compose.yml up -d
 
 # View logs
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # Check status
 docker-compose -f docker/docker-compose.yml ps
@@ -53,10 +53,10 @@ docker-compose -f docker/docker-compose.yml ps
 
 ```bash
 # Check PostgreSQL is running
-docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT 1"
+docker exec trading-automata-db psql -U postgres -d trading-automata -c "SELECT 1"
 
 # Check bot is running
-docker logs trading-bot | grep "Trading Bot initialized"
+docker logs trading-automata | grep "TradingAutomata initialized"
 ```
 
 ### 4. Stop Services
@@ -86,7 +86,7 @@ TRADING_ENV=paper
 **Recommended:**
 ```env
 LOG_LEVEL=INFO
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading-automata
 ```
 
 **Optional:**
@@ -101,15 +101,15 @@ When running in Docker, use these special settings:
 
 ```env
 # Inside Docker container, use service name 'postgres' instead of 'localhost'
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_bot
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading-automata
 ```
 
-The `depends_on` clause ensures PostgreSQL is ready before trading bot starts.
+The `depends_on` clause ensures PostgreSQL is ready before TradingAutomata platform starts.
 
 ## File Structure
 
 ```
-trading-bot/
+trading-automata/
 ├── docker/
 │   ├── docker-compose.yml      ← Main orchestration file
 │   ├── Dockerfile              ← Bot image definition
@@ -125,7 +125,7 @@ trading-bot/
 ```yaml
 Service: postgres
 Image: postgres:15-alpine
-Container Name: trading-bot-db
+Container Name: trading-automata-db
 Port: 5432 (exposed on localhost:5432)
 Volume: postgres_data (persistent storage)
 Health Check: pg_isready
@@ -136,21 +136,21 @@ Restart: unless-stopped
 
 ```bash
 # From inside Docker network
-docker exec trading-bot-db psql -U postgres -d trading_bot
+docker exec trading-automata-db psql -U postgres -d trading-automata
 
 # From your machine
-psql postgresql://postgres:postgres@localhost:5432/trading_bot
+psql postgresql://postgres:postgres@localhost:5432/trading-automata
 
 # Or with environment variables
-PGPASSWORD=postgres psql -h localhost -U postgres -d trading_bot
+PGPASSWORD=postgres psql -h localhost -U postgres -d trading-automata
 ```
 
-### Trading Bot (trading-bot)
+### TradingAutomata (trading-automata)
 
 ```yaml
-Service: trading-bot
+Service: trading-automata
 Image: Builds from docker/Dockerfile
-Container Name: trading-bot
+Container Name: trading-automata
 Depends On: postgres (service_healthy)
 Environment: All settings from .env
 Volumes: logs, config (mounted)
@@ -164,13 +164,13 @@ Resources: 1 CPU, 512MB memory
 
 ```bash
 # Recent logs
-docker-compose -f docker/docker-compose.yml logs trading-bot
+docker-compose -f docker/docker-compose.yml logs trading-automata
 
 # Follow in real-time
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # Last 100 lines
-docker-compose -f docker/docker-compose.yml logs --tail=100 trading-bot
+docker-compose -f docker/docker-compose.yml logs --tail=100 trading-automata
 ```
 
 #### Understanding Bot Startup Logs
@@ -178,13 +178,13 @@ docker-compose -f docker/docker-compose.yml logs --tail=100 trading-bot
 The bot provides detailed logging at each startup stage to help you understand what's happening:
 
 ```
-🤖 Trading Bot Startup
+🤖 TradingAutomata Startup
 ====================
 🗄️  Initializing database migrations...
 ⬇️  Checking strategy data cache...
 ✅ Cache found, using existing data
 
-▶️  Starting trading bot...
+▶️  Starting TradingAutomata platform...
 ```
 
 In **multi-bot mode**, you'll see detailed bot initialization:
@@ -219,13 +219,13 @@ Initializing bot 'alpha_bot' (alpaca paper)
 
 ```bash
 # Interactive psql session
-docker exec -it trading-bot-db psql -U postgres -d trading_bot
+docker exec -it trading-automata-db psql -U postgres -d trading-automata
 
 # Run SQL directly
-docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT COUNT(*) FROM trades"
+docker exec trading-automata-db psql -U postgres -d trading-automata -c "SELECT COUNT(*) FROM trades"
 
 # Export data
-docker exec trading-bot-db pg_dump -U postgres -d trading_bot > backup.sql
+docker exec trading-automata-db pg_dump -U postgres -d trading-automata > backup.sql
 ```
 
 ### Update Configuration
@@ -235,7 +235,7 @@ docker exec trading-bot-db pg_dump -U postgres -d trading_bot > backup.sql
 nano .env
 
 # Restart to apply changes
-docker-compose -f docker/docker-compose.yml restart trading-bot
+docker-compose -f docker/docker-compose.yml restart trading-automata
 ```
 
 ### Check Container Status
@@ -245,17 +245,17 @@ docker-compose -f docker/docker-compose.yml restart trading-bot
 docker-compose -f docker/docker-compose.yml ps
 
 # View container details
-docker inspect trading-bot
+docker inspect trading-automata
 
 # View resource usage
-docker stats trading-bot trading-bot-db
+docker stats trading-automata trading-automata-db
 ```
 
 ### Rebuild Images
 
 ```bash
 # Rebuild bot image (if you changed source code)
-docker-compose -f docker/docker-compose.yml build trading-bot
+docker-compose -f docker/docker-compose.yml build trading-automata
 
 # Rebuild and restart
 docker-compose -f docker/docker-compose.yml up -d --build
@@ -273,13 +273,13 @@ docker-compose -f docker/docker-compose.yml up -d --build
 docker-compose -f docker/docker-compose.yml ps
 
 # Check database is healthy
-docker exec trading-bot-db pg_isready -U postgres -d trading_bot
+docker exec trading-automata-db pg_isready -U postgres -d trading-automata
 
 # View PostgreSQL logs
-docker logs trading-bot-db
+docker logs trading-automata-db
 ```
 
-### "Cannot find container trading-bot-db"
+### "Cannot find container trading-automata-db"
 
 **Problem:** Database container doesn't exist
 
@@ -292,34 +292,34 @@ docker-compose -f docker/docker-compose.yml up -d
 docker-compose -f docker/docker-compose.yml ps
 ```
 
-### "Database 'trading_bot' does not exist"
+### "Database 'trading-automata' does not exist"
 
 **Problem:** Schema not initialized
 
 **Solution:**
 ```bash
 # Initialize database schema
-docker exec trading-bot python -m trading_bot.database.init
+docker exec trading-automata python -m trading-automata.database.init
 
 # Verify tables
-docker exec trading-bot-db psql -U postgres -d trading_bot -c "\dt"
+docker exec trading-automata-db psql -U postgres -d trading-automata -c "\dt"
 ```
 
-### "Trading bot won't start"
+### "TradingAutomata won't start"
 
 **Problem:** Container exits immediately
 
 **Solution:**
 ```bash
 # View logs
-docker logs trading-bot
+docker logs trading-automata
 
 # Check configuration
-docker exec trading-bot env | grep -i database
+docker exec trading-automata env | grep -i database
 
 # Restart with logs visible
-docker-compose -f docker/docker-compose.yml restart trading-bot
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml restart trading-automata
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 ```
 
 ### "Bot starts but shows 'No position to sell' messages"
@@ -334,7 +334,7 @@ docker-compose -f docker/docker-compose.yml logs -f trading-bot
 **Solution:**
 ```bash
 # This is expected behavior. Watch logs for actual trades:
-docker-compose -f docker/docker-compose.yml logs -f trading-bot | grep -E "Signal|Order|Trade"
+docker-compose -f docker/docker-compose.yml logs -f trading-automata | grep -E "Signal|Order|Trade"
 
 # To suppress these messages, check your strategy configuration
 # The position checks happen as the bot monitors symbols
@@ -347,7 +347,7 @@ docker-compose -f docker/docker-compose.yml logs -f trading-bot | grep -E "Signa
 **Check startup completion:**
 ```bash
 # Look for the 'Trading loop started' message
-docker-compose -f docker/docker-compose.yml logs trading-bot | grep -E "Trading loop started|setup complete|Loaded.*strategies"
+docker-compose -f docker/docker-compose.yml logs trading-automata | grep -E "Trading loop started|setup complete|Loaded.*strategies"
 
 # Expected output should include:
 # - "Trading loop started (poll interval: Xs)"
@@ -358,19 +358,19 @@ docker-compose -f docker/docker-compose.yml logs trading-bot | grep -E "Trading 
 **Verify strategies are loaded:**
 ```bash
 # Check which strategies are active
-docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i strategy
+docker-compose -f docker/docker-compose.yml logs trading-automata | grep -i strategy
 
 # Check symbol monitoring
-docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i "monitoring symbols"
+docker-compose -f docker/docker-compose.yml logs trading-automata | grep -i "monitoring symbols"
 ```
 
 **Check for market data issues:**
 ```bash
 # Look for data provider connection messages
-docker-compose -f docker/docker-compose.yml logs trading-bot | grep -E "data provider|market data"
+docker-compose -f docker/docker-compose.yml logs trading-automata | grep -E "data provider|market data"
 
 # If no bars received, market might be closed
-docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i bar
+docker-compose -f docker/docker-compose.yml logs trading-automata | grep -i bar
 ```
 
 ### "Permission denied" on volumes
@@ -396,10 +396,10 @@ docker-compose -f docker/docker-compose.yml restart
 **Solution:**
 ```bash
 # Check volume usage
-docker volume inspect trading-bot_postgres_data
+docker volume inspect trading-automata_postgres_data
 
 # Archive old trades (see DATABASE_SETUP.md)
-docker exec trading-bot-db psql -U postgres -d trading_bot -c \
+docker exec trading-automata-db psql -U postgres -d trading-automata -c \
   "CREATE TABLE trades_archive AS SELECT * FROM trades WHERE entry_timestamp < NOW() - INTERVAL '6 months';"
 
 # Or delete volume (⚠️ loses all data!)
@@ -435,11 +435,11 @@ POSTGRES_PASSWORD=$(openssl rand -base64 32)
 
 ```bash
 # Create secure .env file
-cp .env.example /etc/trading-bot/.env
-chmod 600 /etc/trading-bot/.env
+cp .env.example /etc/trading-automata/.env
+chmod 600 /etc/trading-automata/.env
 
 # Run with specific env file
-docker-compose --env-file /etc/trading-bot/.env up -d
+docker-compose --env-file /etc/trading-automata/.env up -d
 ```
 
 ### Backups
@@ -453,8 +453,8 @@ docker-compose --env-file /etc/trading-bot/.env up -d
 BACKUP_DIR="backups/$(date +%Y-%m-%d)"
 mkdir -p $BACKUP_DIR
 
-docker exec trading-bot-db pg_dump -U postgres -d trading_bot | \
-  gzip > $BACKUP_DIR/trading_bot_$(date +%H%M%S).sql.gz
+docker exec trading-automata-db pg_dump -U postgres -d trading-automata | \
+  gzip > $BACKUP_DIR/trading-automata_$(date +%H%M%S).sql.gz
 
 # Keep only last 7 days
 find backups -type d -mtime +7 -exec rm -rf {} \;
@@ -463,8 +463,8 @@ find backups -type d -mtime +7 -exec rm -rf {} \;
 **Restore from backup:**
 
 ```bash
-gunzip -c backups/2026-02-15/trading_bot_120000.sql.gz | \
-  docker exec -i trading-bot-db psql -U postgres -d trading_bot
+gunzip -c backups/2026-02-15/trading-automata_120000.sql.gz | \
+  docker exec -i trading-automata-db psql -U postgres -d trading-automata
 ```
 
 ### Monitoring
@@ -483,10 +483,10 @@ docker stats | awk '{if ($7 > "80%") print "HIGH MEMORY: " $1}'
 
 ```bash
 # See health check status
-docker ps --no-trunc | grep trading-bot
+docker ps --no-trunc | grep trading-automata
 
 # View health check output
-docker inspect --format='{{json .State.Health}}' trading-bot-db | jq .
+docker inspect --format='{{json .State.Health}}' trading-automata-db | jq .
 ```
 
 ## Advanced
@@ -519,7 +519,7 @@ docker network connect trading-network my-other-container
 
 Access bot from other container:
 ```bash
-# Host: trading-bot
+# Host: trading-automata
 # Port: 8000 (if you expose it)
 ```
 
@@ -539,7 +539,7 @@ Access bot from other container:
 | `DATABASE_URL` | PostgreSQL connection string |
 | `POSTGRES_USER` | Database user (default: postgres) |
 | `POSTGRES_PASSWORD` | Database password (default: postgres) |
-| `POSTGRES_DB` | Database name (default: trading_bot) |
+| `POSTGRES_DB` | Database name (default: trading-automata) |
 
 ## Related Documentation
 
@@ -550,4 +550,4 @@ Access bot from other container:
 
 ---
 
-**Ready to go!** Run `docker-compose -f docker/docker-compose.yml up -d` and your trading bot is live. 🚀
+**Ready to go!** Run `docker-compose -f docker/docker-compose.yml up -d` and your TradingAutomata platform is live. 🚀

@@ -1,8 +1,8 @@
-# Trading Bot - Complete Project Summary
+# TradingAutomata - Complete Project Summary
 
 **Status:** ✅ **PRODUCTION READY** | **February 15, 2026**
 
-A multi-broker trading bot with real-time Telegram monitoring, PostgreSQL persistence, and comprehensive health checks.
+A multi-broker TradingAutomata platform with real-time Telegram monitoring, PostgreSQL persistence, and comprehensive health checks.
 
 ---
 
@@ -40,7 +40,7 @@ Automatically executes trading strategies across multiple brokers (Alpaca, Coinb
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Trading Bot                           │
+│                    TradingAutomata                           │
 │                   (src/main.py)                         │
 ├─────────────────────────────────────────────────────────┤
 │  • Strategy Execution (RSI-ATR, Momentum, etc.)        │
@@ -203,7 +203,7 @@ nano .env  # Add API keys
 docker-compose -f docker/docker-compose.yml up -d
 
 # 3. Monitor
-docker-compose -f docker/docker-compose.yml logs -f trading-bot
+docker-compose -f docker/docker-compose.yml logs -f trading-automata
 
 # 4. Use Telegram
 /status  # Check bot status
@@ -231,7 +231,7 @@ docker-compose -f docker/docker-compose.yml logs -f trading-bot
 
 4. **Monitor**
    - `/status` in Telegram
-   - `docker logs trading-bot` in terminal
+   - `docker logs trading-automata` in terminal
    - Database queries via `docker exec`
 
 ---
@@ -528,7 +528,7 @@ Before going live, verify:
 1. **Bot won't start?**
    - Check `.env` has API keys
    - Check Docker is running
-   - View logs: `docker logs trading-bot`
+   - View logs: `docker logs trading-automata`
 
 2. **Database connection failed?**
    - Check PostgreSQL is running
@@ -538,7 +538,7 @@ Before going live, verify:
 3. **Telegram not working?**
    - Check token in `.env`
    - Check chat ID is correct
-   - Restart: `docker-compose restart trading-bot`
+   - Restart: `docker-compose restart trading-automata`
 
 4. **No trades executing?**
    - Check market is open
@@ -549,16 +549,16 @@ Before going live, verify:
 
 ```bash
 # View logs
-docker-compose logs -f trading-bot
+docker-compose logs -f trading-automata
 
 # Check database
-docker exec trading-bot-db psql -U postgres -d trading_bot -c "SELECT COUNT(*) FROM trades"
+docker exec trading-automata-db psql -U postgres -d trading-automata -c "SELECT COUNT(*) FROM trades"
 
 # Check environment
-docker exec trading-bot env | sort
+docker exec trading-automata env | sort
 
 # Test connection
-docker exec trading-bot python -c "from config.settings import load_settings; print(load_settings().broker)"
+docker exec trading-automata python -c "from config.settings import load_settings; print(load_settings().broker)"
 ```
 
 ---
@@ -590,7 +590,7 @@ docker exec trading-bot python -c "from config.settings import load_settings; pr
 
 ## Summary
 
-**A production-ready trading bot with:**
+**A production-ready TradingAutomata platform with:**
 - ✅ Multi-broker support (Alpaca + Coinbase)
 - ✅ Real-time Telegram monitoring
 - ✅ PostgreSQL trade persistence
