@@ -173,6 +173,48 @@ docker-compose -f docker/docker-compose.yml logs -f trading-bot
 docker-compose -f docker/docker-compose.yml logs --tail=100 trading-bot
 ```
 
+#### Understanding Bot Startup Logs
+
+The bot provides detailed logging at each startup stage to help you understand what's happening:
+
+```
+🤖 Trading Bot Startup
+====================
+🗄️  Initializing database migrations...
+⬇️  Checking strategy data cache...
+✅ Cache found, using existing data
+
+▶️  Starting trading bot...
+```
+
+In **multi-bot mode**, you'll see detailed bot initialization:
+
+```
+🔄 Multi-bot mode detected - using BotOrchestrator
+Setting up 2/2 bot instance(s)...
+Initializing bot 'alpha_bot' (alpaca paper)
+  [alpha_bot] Setting up bot components...
+  [alpha_bot] Connected to data provider
+  [alpha_bot] Portfolio manager initialized (allocation: 5000.00 dollars, fence: hard)
+  [alpha_bot] Loading strategies from config/strategies.yaml...
+  [alpha_bot] Loaded 2 strategies: RSIATRTrendStrategy, SigmaSeriesFastStrategy
+  [alpha_bot] Monitoring symbols: BTC/USD, ETH/USD
+  [alpha_bot] ✅ Setup complete
+  [alpha_bot] ✅ All startup checks passed, starting trading loop...
+  [alpha_bot] Trading loop started (poll interval: 60s)
+
+✅ Orchestrator setup complete: 2 bot(s) ready [alpha_bot, beta_bot]
+  ▶️  Starting bot 'alpha_bot'
+  ▶️  Starting bot 'beta_bot'
+```
+
+**What each log means:**
+- `✅ Setup complete` - Bot components initialized successfully
+- `Trading loop started` - Bot is now actively monitoring markets
+- `Loaded X strategies` - Shows which strategies are active
+- `Monitoring symbols` - Lists the assets being watched
+- `✅ Orchestrator setup complete` - All bots ready to trade
+
 ### Access Database
 
 ```bash
@@ -278,6 +320,57 @@ docker exec trading-bot env | grep -i database
 # Restart with logs visible
 docker-compose -f docker/docker-compose.yml restart trading-bot
 docker-compose -f docker/docker-compose.yml logs -f trading-bot
+```
+
+### "Bot starts but shows 'No position to sell' messages"
+
+**Problem:** Bot is running but keeps logging "No position to sell for {symbol}"
+
+**What this means:**
+- Bot is actively trading and checking for existing positions
+- This is normal when the bot first starts (no open positions yet)
+- It means the trading loop is working correctly
+
+**Solution:**
+```bash
+# This is expected behavior. Watch logs for actual trades:
+docker-compose -f docker/docker-compose.yml logs -f trading-bot | grep -E "Signal|Order|Trade"
+
+# To suppress these messages, check your strategy configuration
+# The position checks happen as the bot monitors symbols
+```
+
+### "Bot doesn't seem to be doing anything"
+
+**Problem:** Bot is running but no trades happening
+
+**Check startup completion:**
+```bash
+# Look for the 'Trading loop started' message
+docker-compose -f docker/docker-compose.yml logs trading-bot | grep -E "Trading loop started|setup complete|Loaded.*strategies"
+
+# Expected output should include:
+# - "Trading loop started (poll interval: Xs)"
+# - "Loaded X strategies: ..."
+# - "Monitoring symbols: ..."
+```
+
+**Verify strategies are loaded:**
+```bash
+# Check which strategies are active
+docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i strategy
+
+# Check symbol monitoring
+docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i "monitoring symbols"
+```
+
+**Check for market data issues:**
+```bash
+# Look for data provider connection messages
+docker-compose -f docker/docker-compose.yml logs trading-bot | grep -E "data provider|market data"
+
+# If no bars received, market might be closed
+docker-compose -f docker/docker-compose.yml logs trading-bot | grep -i bar
 ```
 
 ### "Permission denied" on volumes

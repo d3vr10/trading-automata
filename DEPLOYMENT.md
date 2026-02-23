@@ -191,30 +191,65 @@ python -m trading_bot.main
 
 ## Monitoring
 
-### Docker
-```bash
-# View logs
-docker-compose logs -f
+### Bot Health & Lifecycle
+For detailed monitoring guide with log interpretation, see [docs/BOT_MONITORING.md](docs/BOT_MONITORING.md).
 
+The bot provides detailed logging at each startup phase:
+- **Initialization**: Database migrations, config loading
+- **Mode Detection**: Single-bot vs multi-bot mode
+- **Setup**: Broker connection, strategies loading, symbols monitoring
+- **Trading Loop**: Active market monitoring
+
+Look for these success indicators:
+```
+[bot_name] ✅ Setup complete
+[bot_name] ✅ All startup checks passed, starting trading loop...
+[bot_name] Trading loop started (poll interval: 60s)
+```
+
+### Docker Logs
+```bash
+# View real-time logs
+docker-compose logs -f trading-bot
+
+# View last 50 lines
+docker-compose logs --tail 50 trading-bot
+
+# Follow specific events
+docker-compose logs -f trading-bot | grep -E "Signal|Trade|Order"
+
+# Check startup progress
+docker-compose logs trading-bot | grep -E "setup|complete|Trading loop"
+```
+
+### Container Status
+```bash
 # Check status
 docker-compose ps
 
 # Check resources
 docker stats trading-bot
+
+# View container details
+docker inspect trading-bot
 ```
 
-### Local
+### Local Python Logs
 ```bash
 # View logs
 tail -f logs/trading_bot.log
 
 # Monitor performance
 watch -n 5 'tail logs/trading_bot.log'
+
+# Search for patterns
+grep "Signal\|Trade\|Error" logs/trading_bot.log
 ```
 
-### Alpaca Dashboard
-- Paper trading: https://app.alpaca.markets (paper account)
-- Live trading: https://app.alpaca.markets (live account)
+### Broker Dashboards
+- **Alpaca Paper**: https://app.alpaca.markets (paper account)
+- **Alpaca Live**: https://app.alpaca.markets (live account)
+- **Coinbase**: https://advanced.coinbase.com (Advanced Trading)
 
 ## Troubleshooting
 

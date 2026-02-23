@@ -501,16 +501,24 @@ pytest tests/ --cov=src
 
 Complete guides for all features:
 
+**Getting Started:**
 - **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Configuration methods, environment variables, priorities
-- **[RSI_ATR_STRATEGY.md](docs/RSI_ATR_STRATEGY.md)** - Generic RSI+ATR strategy for any asset class
-- **[FILTERS.md](docs/FILTERS.md)** - Volatility and liquidity filters configuration
-- **[MULTI_BROKER.md](docs/MULTI_BROKER.md)** - Alpaca and Coinbase setup and usage
+- **[DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** - Docker Compose deployment guide
+
+**Operations & Monitoring:**
+- **[BOT_MONITORING.md](docs/BOT_MONITORING.md)** - Bot lifecycle, startup phases, health monitoring, troubleshooting logs
 - **[DATABASE_SETUP.md](docs/DATABASE_SETUP.md)** - PostgreSQL installation and configuration
+- **[TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)** - Telegram bot notifications
+
+**Strategies & Trading:**
+- **[RSI_ATR_STRATEGY.md](docs/RSI_ATR_STRATEGY.md)** - Generic RSI+ATR strategy for any asset class
+- **[EUR_USD_STRATEGY.md](docs/EUR_USD_STRATEGY.md)** - Example EUR/USD trading strategy
+- **[FILTERS.md](docs/FILTERS.md)** - Volatility and liquidity filters configuration
+
+**Architecture & Development:**
+- **[MULTI_BROKER.md](docs/MULTI_BROKER.md)** - Alpaca and Coinbase setup and usage
 - **[DATABASE_INTEGRATION.md](docs/DATABASE_INTEGRATION.md)** - Database schema, health checks
 - **[ALEMBIC_MIGRATIONS.md](docs/ALEMBIC_MIGRATIONS.md)** - Database migrations and schema versioning
-- **[DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** - Docker Compose deployment guide
-- **[TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)** - Telegram bot notifications
-- **[EUR_USD_STRATEGY.md](docs/EUR_USD_STRATEGY.md)** - Example EUR/USD trading strategy
 
 ## External Resources
 
