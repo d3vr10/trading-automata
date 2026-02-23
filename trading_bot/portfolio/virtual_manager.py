@@ -11,7 +11,7 @@ from typing import Optional
 
 from trading_bot.brokers.base import IBroker
 from trading_bot.config.bot_config import AllocationConfig, FenceConfig, RiskConfig
-from trading_bot.data.models import Signal
+from trading_bot.strategies.base import Signal
 from trading_bot.execution.order_manager import OrderManager
 from trading_bot.portfolio.manager import PortfolioManager
 

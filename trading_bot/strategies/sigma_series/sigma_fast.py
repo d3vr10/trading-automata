@@ -32,8 +32,8 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional, Dict, Any
 
-from trading_bot.data.models import Bar, Signal
-from trading_bot.strategies.base import BaseStrategy
+from trading_bot.data.models import Bar
+from trading_bot.strategies.base import BaseStrategy, Signal
 
 
 class SigmaSeriesFastStrategy(BaseStrategy):
