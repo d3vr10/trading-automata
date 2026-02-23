@@ -67,7 +67,7 @@ class BotOrchestrator:
             self.trade_repo = TradeRepository(self.db.session_factory)
 
             # Setup shared health checks
-            self.health_checks = HealthCheckRegistry()
+            self.health_checks = HealthCheckRegistry(self.db.session_factory)
 
             # Setup shared event logger
             logger.debug("Setting up event logger...")
