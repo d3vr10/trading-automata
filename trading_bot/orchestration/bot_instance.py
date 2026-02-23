@@ -23,7 +23,7 @@ from trading_bot.database.repository import TradeRepository
 from trading_bot.database.health import HealthCheckRegistry
 from trading_bot.execution.order_manager import OrderManager
 from trading_bot.monitoring.event_logger import EventLogger
-from trading_bot.monitoring.logger import get_logger
+from trading_bot.monitoring.logger import get_logger, BotLoggerAdapter
 from trading_bot.notifications.telegram_bot import BotScopedTelegram
 from trading_bot.portfolio.virtual_manager import VirtualPortfolioManager
 from trading_bot.strategies.base import BaseStrategy
@@ -32,7 +32,7 @@ from trading_bot.utils.exceptions import TradingBotError
 from trading_bot.utils.strategy_warmer import warm_up_all_strategies
 
 
-logger = get_logger(__name__)
+_base_logger = get_logger(__name__)
 
 
 class BotInstance:
@@ -65,6 +65,10 @@ class BotInstance:
         """
         self.config = config
         self.bot_name = config.name
+
+        # Create logger adapter with bot name context
+        self.logger = BotLoggerAdapter(_base_logger, {'bot_name': self.bot_name})
+
         self.db = db
         self.trade_repo = trade_repo
         self.health_checks = health_checks
@@ -94,7 +98,7 @@ class BotInstance:
         self._health_check_task: Optional[asyncio.Task] = None
         self._last_health_check_save = datetime.now(UTC)
 
-        logger.info(f"BotInstance '{self.bot_name}' initialized")
+        self.logger.info(f"Initialized")
 
     async def setup(self) -> bool:
         """Setup bot components.
@@ -106,10 +110,10 @@ class BotInstance:
             True if setup successful, False otherwise
         """
         try:
-            logger.info(f"[{self.bot_name}] Setting up bot components...")
+            self.logger.info(f"Setting up bot components...")
 
             # Create broker
-            logger.debug(f"[{self.bot_name}] Creating {self.config.broker.type} broker...")
+            self.logger.debug(f"Creating {self.config.broker.type} broker...")
             environment = Environment(self.config.broker.environment)
 
             # Build broker config dictionary
@@ -127,11 +131,11 @@ class BotInstance:
             )
 
             if not self.broker.connect():
-                logger.error(f"[{self.bot_name}] Failed to connect to broker")
+                self.logger.error(f"Failed to connect to broker")
                 return False
 
             # Create data provider
-            logger.debug(f"[{self.bot_name}] Creating data provider...")
+            self.logger.debug(f"Creating data provider...")
             data_api_key = self.config.data_provider.api_key or self.config.broker.api_key
             data_secret_key = self.config.data_provider.secret_key or self.config.broker.secret_key
 
@@ -142,13 +146,13 @@ class BotInstance:
 
             # Connect data provider
             if not self.data_provider.connect():
-                logger.error(f"[{self.bot_name}] Failed to connect to data provider")
+                self.logger.error(f"Failed to connect to data provider")
                 return False
-            logger.info(f"[{self.bot_name}] Connected to data provider")
+            self.logger.info(f"Connected to data provider")
 
             # Create order manager
             self.order_manager = OrderManager(self.broker)
-            logger.debug(f"[{self.bot_name}] Order manager created")
+            self.logger.debug(f"Order manager created")
 
             # Create virtual portfolio manager
             self.portfolio_manager = VirtualPortfolioManager(
@@ -158,14 +162,14 @@ class BotInstance:
                 fence=self.config.fence,
                 risk=self.config.risk,
             )
-            logger.info(f"[{self.bot_name}] Portfolio manager initialized (allocation: {self.config.allocation.amount} {self.config.allocation.type}, fence: {self.config.fence.type})")
+            self.logger.info(f"Portfolio manager initialized (allocation: {self.config.allocation.amount} {self.config.allocation.type}, fence: {self.config.fence.type})")
 
             # Register strategies
-            logger.debug(f"[{self.bot_name}] Registering built-in strategy classes...")
+            self.logger.debug(f"Registering built-in strategy classes...")
             self._register_strategies()
 
             # Load strategies from config
-            logger.info(f"[{self.bot_name}] Loading strategies from {self.config.strategy_config}...")
+            self.logger.info(f"Loading strategies from {self.config.strategy_config}...")
             strategies = StrategyRegistry.load_from_config(
                 config_path=self.config.strategy_config,
                 event_logger=self.event_logger,
@@ -173,10 +177,10 @@ class BotInstance:
             self.strategies = [s for s in strategies if s]
 
             if not self.strategies:
-                logger.error(f"[{self.bot_name}] No strategies loaded from {self.config.strategy_config}")
+                self.logger.error(f"No strategies loaded from {self.config.strategy_config}")
                 return False
 
-            logger.info(f"[{self.bot_name}] Loaded {len(self.strategies)} strategies: {', '.join(s.name for s in self.strategies)}")
+            self.logger.info(f"Loaded {len(self.strategies)} strategies: {', '.join(s.name for s in self.strategies)}")
 
             # Register health checks
             for strategy in self.strategies:
@@ -187,7 +191,7 @@ class BotInstance:
                 )
 
             # Warm up strategies
-            logger.debug(f"[{self.bot_name}] Warming up strategies...")
+            self.logger.debug(f"Warming up strategies...")
             warm_up_all_strategies(self.strategies)
 
             # Log monitored symbols
@@ -195,13 +199,13 @@ class BotInstance:
             for strategy in self.strategies:
                 symbols.update(strategy.config.get('symbols', []))
             if symbols:
-                logger.info(f"[{self.bot_name}] Monitoring symbols: {', '.join(sorted(symbols))}")
+                self.logger.info(f"Monitoring symbols: {', '.join(sorted(symbols))}")
 
-            logger.info(f"[{self.bot_name}] ✅ Setup complete")
+            self.logger.info(f"✅ Setup complete")
             return True
 
         except Exception as e:
-            logger.error(f"[{self.bot_name}] Setup failed: {e}", exc_info=True)
+            self.logger.error(f"Setup failed: {e}", exc_info=True)
             return False
 
     async def start(self) -> None:
@@ -210,11 +214,11 @@ class BotInstance:
         Runs the main trading loop and handles cleanup.
         """
         if not await self.setup():
-            logger.error(f"[{self.bot_name}] Setup failed, cannot start")
+            self.logger.error(f"Setup failed, cannot start")
             return
 
         self._running = True
-        logger.info(f"[{self.bot_name}] ✅ All startup checks passed, starting trading loop...")
+        self.logger.info(f"✅ All startup checks passed, starting trading loop...")
 
         try:
             # Start health check task
@@ -223,9 +227,9 @@ class BotInstance:
             await self._run_trading_loop()
 
         except KeyboardInterrupt:
-            logger.info(f"[{self.bot_name}] Interrupted by user")
+            self.logger.info(f"Interrupted by user")
         except Exception as e:
-            logger.error(f"[{self.bot_name}] Error in trading loop: {e}", exc_info=True)
+            self.logger.error(f"Error in trading loop: {e}", exc_info=True)
         finally:
             await self._cleanup_async()
             self.stop()
@@ -245,7 +249,7 @@ class BotInstance:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"[{self.bot_name}] Health check error: {e}")
+                self.logger.error(f"Health check error: {e}")
 
     async def _run_trading_loop(self) -> None:
         """Main trading loop.
@@ -253,13 +257,13 @@ class BotInstance:
         Continuously polls for new bars and processes signals.
         """
         poll_interval = self.config.trade_frequency.poll_interval_minutes * 60
-        logger.info(f"[{self.bot_name}] Trading loop started (poll interval: {poll_interval}s)")
+        self.logger.info(f"Trading loop started (poll interval: {poll_interval}s)")
 
         while self._running:
             try:
                 # Try broker reconnect if disconnected
                 if not await self._try_broker_reconnect():
-                    logger.warning(f"[{self.bot_name}] Broker disconnected, waiting for reconnection...")
+                    self.logger.warning(f"Broker disconnected, waiting for reconnection...")
                     await asyncio.sleep(poll_interval)
                     continue
 
@@ -275,7 +279,7 @@ class BotInstance:
                         if bar:
                             await self._process_bar(bar)
                     except Exception as e:
-                        logger.error(f"[{self.bot_name}] Error processing bar for {symbol}: {e}")
+                        self.logger.error(f"Error processing bar for {symbol}: {e}")
 
                 # Update pending orders
                 if self.order_manager:
@@ -289,7 +293,7 @@ class BotInstance:
                 await asyncio.sleep(poll_interval)
 
             except Exception as e:
-                logger.error(f"[{self.bot_name}] Trading loop error: {e}")
+                self.logger.error(f"Trading loop error: {e}")
                 await asyncio.sleep(poll_interval)
 
     async def _process_bar(self, bar: Bar) -> None:
@@ -343,8 +347,8 @@ class BotInstance:
                                 )
 
             except Exception as e:
-                logger.error(
-                    f"[{self.bot_name}] Error processing signal from {strategy.name}: {e}",
+                self.logger.error(
+                    f"Error processing signal from {strategy.name}: {e}",
                     exc_info=True,
                 )
 
@@ -361,10 +365,10 @@ class BotInstance:
                 bot_name=self.bot_name,
             )
 
-            logger.info(f"[{self.bot_name}] Recorded trade entry #{trade_id} for {signal.symbol}")
+            self.logger.info(f"Recorded trade entry #{trade_id} for {signal.symbol}")
 
         except Exception as e:
-            logger.error(f"[{self.bot_name}] Failed to record trade entry: {e}")
+            self.logger.error(f"Failed to record trade entry: {e}")
 
     async def _record_trade_exit(self, strategy: BaseStrategy, signal, order_id: str) -> None:
         """Record trade exit in database."""
@@ -387,12 +391,12 @@ class BotInstance:
                     exit_order_id=order_id,
                     bot_name=self.bot_name,
                 )
-                logger.info(f"[{self.bot_name}] Recorded trade exit for trade #{trade_to_exit['id']}")
+                self.logger.info(f"Recorded trade exit for trade #{trade_to_exit['id']}")
             else:
-                logger.warning(f"[{self.bot_name}] No open trade found to exit for {signal.symbol}")
+                self.logger.warning(f"No open trade found to exit for {signal.symbol}")
 
         except Exception as e:
-            logger.error(f"[{self.bot_name}] Failed to record trade exit: {e}")
+            self.logger.error(f"Failed to record trade exit: {e}")
 
     async def _record_session_start(self) -> None:
         """Record bot session start."""
@@ -404,7 +408,7 @@ class BotInstance:
                 bot_name=self.bot_name,
             )
         except Exception as e:
-            logger.error(f"[{self.bot_name}] Failed to record session start: {e}")
+            self.logger.error(f"Failed to record session start: {e}")
 
     async def _try_broker_reconnect(self) -> bool:
         """Try to reconnect to broker with exponential backoff.
@@ -429,13 +433,13 @@ class BotInstance:
         # Try to reconnect
         self._last_broker_reconnect_attempt = now
         if self.broker.connect():
-            logger.info(f"[{self.bot_name}] Broker reconnected successfully")
+            self.logger.info(f"Broker reconnected successfully")
             self._broker_reconnect_attempts = 0
             return True
         else:
             self._broker_reconnect_attempts += 1
-            logger.warning(
-                f"[{self.bot_name}] Broker reconnection failed "
+            self.logger.warning(
+                f"Broker reconnection failed "
                 f"(attempt {self._broker_reconnect_attempts}/{self._broker_max_reconnect_attempts})"
             )
             return False
@@ -451,20 +455,20 @@ class BotInstance:
             try:
                 await self.health_checks.save_all()
             except Exception as e:
-                logger.error(f"[{self.bot_name}] Failed to save final health checks: {e}")
+                self.logger.error(f"Failed to save final health checks: {e}")
 
         # Log final stats
         if self.portfolio_manager:
             stats = self.portfolio_manager.get_portfolio_stats()
-            logger.info(f"[{self.bot_name}] Final portfolio stats: {stats}")
+            self.logger.info(f"Final portfolio stats: {stats}")
 
         for strategy in self.strategies:
             stats = strategy.get_stats()
-            logger.info(f"[{self.bot_name}] Strategy {strategy.name} stats: {stats}")
+            self.logger.info(f"Strategy {strategy.name} stats: {stats}")
 
     def stop(self) -> None:
         """Stop the bot."""
-        logger.info(f"[{self.bot_name}] Stopping bot...")
+        self.logger.info(f"Stopping bot...")
         self._running = False
 
         if self.broker:
@@ -491,4 +495,4 @@ class BotInstance:
     def _set_paused(self, paused: bool) -> None:
         """Set pause state."""
         self._paused = paused
-        logger.info(f"[{self.bot_name}] Trading {'paused' if paused else 'resumed'}")
+        self.logger.info(f"Trading {'paused' if paused else 'resumed'}")

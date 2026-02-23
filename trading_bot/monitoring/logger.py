@@ -82,3 +82,17 @@ def get_logger(name: str) -> logging.Logger:
         Logger instance.
     """
     return logging.getLogger(f'trading_bot.{name}')
+
+
+class BotLoggerAdapter(logging.LoggerAdapter):
+    """LoggerAdapter that automatically adds bot name context to all logs.
+
+    Usage:
+        bot_logger = BotLoggerAdapter(logger, {'bot_name': 'alpha_bot'})
+        bot_logger.info("Starting setup")  # Logs: "[alpha_bot] Starting setup"
+    """
+
+    def process(self, msg: str, kwargs) -> tuple:
+        """Add bot name prefix to all messages."""
+        bot_name = self.extra.get('bot_name', 'unknown')
+        return f"[{bot_name}] {msg}", kwargs
