@@ -1,8 +1,8 @@
 # Trading Bot System - Comprehensive Index
 
-**Last Updated:** February 22, 2026
-**System Version:** 0.4.0 (Multi-Bot Orchestration)
-**Status:** ✅ Production Ready for Coinbase Deployment
+**Last Updated:** February 23, 2026
+**System Version:** 0.4.1 (Enhanced Logging & Monitoring)
+**Status:** ✅ Production Ready with Detailed Lifecycle Visibility
 
 ---
 
@@ -414,7 +414,9 @@ All fixed on Feb 22, 2026 ([commit 2cc6bc4](https://github.com/...)):
 ### 📋 Using the System
 | Document | Best For |
 |----------|----------|
+| **[docs/BOT_MONITORING.md](docs/BOT_MONITORING.md)** | Bot startup lifecycle, logs, health monitoring |
 | **[CLI_UPDATES.md](CLI_UPDATES.md)** | CLI command reference |
+| **[docs/DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** | Docker deployment & troubleshooting |
 | **[config/example-bots-coinbase.yaml](config/example-bots-coinbase.yaml)** | Configuration examples |
 
 ---
