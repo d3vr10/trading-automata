@@ -71,7 +71,7 @@ class BotOrchestrator:
 
             # Setup shared event logger
             logger.debug("Setting up event logger...")
-            init_event_logger(self.db)
+            init_event_logger(self.db.session_factory)
             self.event_logger = get_event_logger()
 
             # Setup shared Telegram bot (if configured)
