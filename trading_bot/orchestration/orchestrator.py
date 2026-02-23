@@ -92,14 +92,16 @@ class BotOrchestrator:
                 logger.warning("Telegram bot not configured (no token)")
 
             # Setup bot instances
-            logger.info(f"Setting up {len(self.orchestrator_config.bots)} bot instance(s)...")
+            num_enabled_bots = sum(1 for b in self.orchestrator_config.bots if b.enabled)
+            logger.info(f"Setting up {num_enabled_bots}/{len(self.orchestrator_config.bots)} bot instance(s)...")
             successful_bots = 0
 
             for bot_cfg in self.orchestrator_config.bots:
                 if not bot_cfg.enabled:
-                    logger.info(f"Bot '{bot_cfg.name}' is disabled, skipping")
+                    logger.debug(f"Bot '{bot_cfg.name}' is disabled, skipping")
                     continue
 
+                logger.info(f"Initializing bot '{bot_cfg.name}' ({bot_cfg.broker.type} {bot_cfg.broker.environment})")
                 try:
                     # Create bot-scoped Telegram if shared Telegram exists
                     bot_telegram = None
@@ -133,7 +135,8 @@ class BotOrchestrator:
                 logger.error("No bots were successfully initialized")
                 return False
 
-            logger.info(f"Setup complete: {successful_bots} bot(s) ready")
+            bot_names = ', '.join(self.bot_registry.keys())
+            logger.info(f"✅ Orchestrator setup complete: {successful_bots} bot(s) ready [{bot_names}]")
             return True
 
         except Exception as e:
@@ -162,6 +165,7 @@ class BotOrchestrator:
             # Start all bot instances in parallel
             logger.info(f"Starting {len(self.bot_instances)} bot instance(s)...")
             for bot_instance in self.bot_instances:
+                logger.info(f"  ▶️  Starting bot '{bot_instance.bot_name}'")
                 task = asyncio.create_task(bot_instance.start())
                 self._tasks.append(task)
 

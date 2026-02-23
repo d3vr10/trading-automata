@@ -783,6 +783,10 @@ def main():
       or config/bots/ directory exists
     - Single-bot (legacy) mode: Otherwise, uses legacy TradingBot class
     """
+    logger.info("=" * 60)
+    logger.info("🤖 Trading Bot Startup")
+    logger.info("=" * 60)
+
     # Auto-detect mode
     use_multi = (
         os.environ.get("BOT_MODE", "").lower() == "multi"
@@ -793,13 +797,13 @@ def main():
     try:
         if use_multi:
             # Multi-bot mode
-            logger.info("Multi-bot mode detected - using BotOrchestrator")
+            logger.info("🔄 Multi-bot mode detected - using BotOrchestrator")
             from trading_bot.orchestration.orchestrator import BotOrchestrator
             orchestrator = BotOrchestrator()
             asyncio.run(orchestrator.start())
         else:
             # Legacy single-bot mode
-            logger.info("Single-bot mode - using legacy TradingBot")
+            logger.info("🔄 Single-bot mode - using legacy TradingBot")
             bot = TradingBot()
             asyncio.run(bot.start())
             bot.stop()

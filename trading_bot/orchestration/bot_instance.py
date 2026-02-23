@@ -144,9 +144,11 @@ class BotInstance:
             if not self.data_provider.connect():
                 logger.error(f"[{self.bot_name}] Failed to connect to data provider")
                 return False
+            logger.info(f"[{self.bot_name}] Connected to data provider")
 
             # Create order manager
             self.order_manager = OrderManager(self.broker)
+            logger.debug(f"[{self.bot_name}] Order manager created")
 
             # Create virtual portfolio manager
             self.portfolio_manager = VirtualPortfolioManager(
@@ -156,11 +158,14 @@ class BotInstance:
                 fence=self.config.fence,
                 risk=self.config.risk,
             )
+            logger.info(f"[{self.bot_name}] Portfolio manager initialized (allocation: {self.config.allocation.amount} {self.config.allocation.type}, fence: {self.config.fence.type})")
 
             # Register strategies
+            logger.debug(f"[{self.bot_name}] Registering built-in strategy classes...")
             self._register_strategies()
 
             # Load strategies from config
+            logger.info(f"[{self.bot_name}] Loading strategies from {self.config.strategy_config}...")
             strategies = StrategyRegistry.load_from_config(
                 config_path=self.config.strategy_config,
                 event_logger=self.event_logger,
@@ -171,7 +176,7 @@ class BotInstance:
                 logger.error(f"[{self.bot_name}] No strategies loaded from {self.config.strategy_config}")
                 return False
 
-            logger.info(f"[{self.bot_name}] Loaded {len(self.strategies)} strategies")
+            logger.info(f"[{self.bot_name}] Loaded {len(self.strategies)} strategies: {', '.join(s.name for s in self.strategies)}")
 
             # Register health checks
             for strategy in self.strategies:
@@ -185,7 +190,14 @@ class BotInstance:
             logger.debug(f"[{self.bot_name}] Warming up strategies...")
             warm_up_all_strategies(self.strategies)
 
-            logger.info(f"[{self.bot_name}] Setup complete")
+            # Log monitored symbols
+            symbols = set()
+            for strategy in self.strategies:
+                symbols.update(strategy.config.get('symbols', []))
+            if symbols:
+                logger.info(f"[{self.bot_name}] Monitoring symbols: {', '.join(sorted(symbols))}")
+
+            logger.info(f"[{self.bot_name}] ✅ Setup complete")
             return True
 
         except Exception as e:
@@ -202,6 +214,7 @@ class BotInstance:
             return
 
         self._running = True
+        logger.info(f"[{self.bot_name}] ✅ All startup checks passed, starting trading loop...")
 
         try:
             # Start health check task
@@ -240,6 +253,7 @@ class BotInstance:
         Continuously polls for new bars and processes signals.
         """
         poll_interval = self.config.trade_frequency.poll_interval_minutes * 60
+        logger.info(f"[{self.bot_name}] Trading loop started (poll interval: {poll_interval}s)")
 
         while self._running:
             try:
