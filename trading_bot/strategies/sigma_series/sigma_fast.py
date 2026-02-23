@@ -144,6 +144,7 @@ class SigmaSeriesFastStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.85,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "stop_loss": sl_price,
                         "take_profit": tp_price,
@@ -174,6 +175,7 @@ class SigmaSeriesFastStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.85,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "stop_loss": sl_price,
                         "take_profit": tp_price,

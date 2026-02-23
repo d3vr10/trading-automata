@@ -135,6 +135,7 @@ class SigmaSeriesAlphaStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.80,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "stop_loss": sl_price,
                         "take_profit": tp_price,
@@ -165,6 +166,7 @@ class SigmaSeriesAlphaStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.80,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "stop_loss": sl_price,
                         "take_profit": tp_price,

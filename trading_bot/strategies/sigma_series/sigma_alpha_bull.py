@@ -157,6 +157,7 @@ class SigmaSeriesAlphaBullStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.90,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "reason": f"Exit: {exit_reason}",
                         "atr": float(atr),
@@ -185,6 +186,7 @@ class SigmaSeriesAlphaBullStrategy(BaseStrategy):
                     quantity=self._calculate_qty(bar),
                     confidence=0.90,
                     metadata={
+                        "strategy": self.name,
                         "price": float(bar.close),
                         "stop_loss": sl_price,
                         "take_profit": tp_price,

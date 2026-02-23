@@ -42,6 +42,20 @@ class PortfolioManager:
         self._positions_cache = None
         self._account_cache = None
 
+    def _get_signal_context(self, signal: 'Signal') -> str:
+        """Get context string for signal (including strategy name if available).
+
+        Args:
+            signal: Trading signal
+
+        Returns:
+            Context string like "signal for XYZ from strategy_name" or just "signal for XYZ"
+        """
+        strategy_name = signal.metadata.get('strategy', '') if signal.metadata else ''
+        if strategy_name:
+            return f"{signal.symbol} from {strategy_name}"
+        return signal.symbol
+
     def refresh_state(self) -> None:
         """Refresh portfolio state from broker.
 
@@ -162,8 +176,9 @@ class PortfolioManager:
             estimated_cost = signal.quantity * signal.metadata.get('price', Decimal('1'))
 
             if estimated_cost > buying_power:
+                context = self._get_signal_context(signal)
                 self.logger.warning(
-                    f"Insufficient buying power for {signal}: "
+                    f"Insufficient buying power for {context}: "
                     f"need {estimated_cost}, have {buying_power}"
                 )
                 return False
@@ -173,12 +188,14 @@ class PortfolioManager:
         elif signal.action == 'sell':
             position = self.get_position(signal.symbol)
             if position is None:
-                self.logger.warning(f"No position to sell for {signal.symbol}")
+                context = self._get_signal_context(signal)
+                self.logger.warning(f"No position to sell: {context}")
                 return False
 
             if Decimal(str(position['qty'])) < signal.quantity:
+                context = self._get_signal_context(signal)
                 self.logger.warning(
-                    f"Insufficient position for sell: "
+                    f"Insufficient position for {context}: "
                     f"have {position['qty']}, want to sell {signal.quantity}"
                 )
                 return False
@@ -197,7 +214,8 @@ class PortfolioManager:
             Order ID if executed, None otherwise.
         """
         if not self.can_execute_signal(signal):
-            self.logger.info(f"Signal validation failed: {signal}")
+            context = self._get_signal_context(signal)
+            self.logger.info(f"Signal validation failed: {context}")
             return None
 
         # Adjust quantity if needed
