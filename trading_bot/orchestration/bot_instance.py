@@ -140,6 +140,11 @@ class BotInstance:
                 secret_key=data_secret_key,
             )
 
+            # Connect data provider
+            if not self.data_provider.connect():
+                logger.error(f"[{self.bot_name}] Failed to connect to data provider")
+                return False
+
             # Create order manager
             self.order_manager = OrderManager(self.broker)
 
@@ -179,9 +184,6 @@ class BotInstance:
             # Warm up strategies
             logger.debug(f"[{self.bot_name}] Warming up strategies...")
             warm_up_all_strategies(self.strategies)
-
-            # Record session start
-            await self._record_session_start()
 
             logger.info(f"[{self.bot_name}] Setup complete")
             return True
