@@ -79,14 +79,15 @@ class BotOrchestrator:
                 logger.info("Setting up Telegram bot...")
                 self.telegram_bot = TradingBotTelegram(
                     token=global_cfg.telegram_token,
-                    chat_ids=global_cfg.telegram_chat_id.split(',') if global_cfg.telegram_chat_id else [],
+                    chat_id=global_cfg.telegram_chat_id.split(',') if global_cfg.telegram_chat_id else [],
                     username_whitelist=global_cfg.telegram_username_whitelist,
                     webhook_url=global_cfg.telegram_webhook_url,
                     webhook_secret=global_cfg.telegram_webhook_secret,
                     webhook_port=global_cfg.telegram_webhook_port,
                     database_url=global_cfg.database_url,
-                    bot_registry=self.bot_registry,  # Pass for /pause_bot, /resume_bot commands
                 )
+                # Register bot instances for multi-bot commands (/bots, /pause_bot, /resume_bot)
+                self.telegram_bot.set_bot_registry(self.bot_registry)
             else:
                 logger.warning("Telegram bot not configured (no token)")
 
