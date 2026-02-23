@@ -13,7 +13,7 @@
 
 # Global settings shared across all bots
 global:
-  database_url: "postgresql://postgres:postgres@localhost:5432/trading_bot"
+  database_url: "postgresql://postgres:postgres@postgres:5432/trading_bot"
   telegram_token: "${TELEGRAM_TOKEN}"
   telegram_chat_id: "${TELEGRAM_CHAT_ID}"
   telegram_username_whitelist: "your_username,another_user"

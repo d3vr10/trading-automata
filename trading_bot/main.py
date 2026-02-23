@@ -776,37 +776,23 @@ class TradingBot:
 
 
 def main():
-    """Main entry point with auto-detection of bot mode.
+    """Main entry point - uses multi-bot orchestrator.
 
-    Automatically detects whether to run in multi-bot or single-bot mode:
-    - Multi-bot mode: If BOT_MODE=multi env var is set, or config/bots.yaml exists,
-      or config/bots/ directory exists
-    - Single-bot (legacy) mode: Otherwise, uses legacy TradingBot class
+    The BotOrchestrator handles all bot configurations:
+    - Single bot: Create config/bots.yaml with one bot entry
+    - Multiple bots: Add multiple bot entries to config/bots.yaml
+    - Per-bot configs: Place individual bot configs in config/bots/*.yaml (optional)
     """
     logger.info("=" * 60)
     logger.info("🤖 Trading Bot Startup")
     logger.info("=" * 60)
 
-    # Auto-detect mode
-    use_multi = (
-        os.environ.get("BOT_MODE", "").lower() == "multi"
-        or Path("config/bots.yaml").exists()
-        or Path("config/bots").is_dir()
-    )
-
     try:
-        if use_multi:
-            # Multi-bot mode
-            logger.info("🔄 Multi-bot mode detected - using BotOrchestrator")
-            from trading_bot.orchestration.orchestrator import BotOrchestrator
-            orchestrator = BotOrchestrator()
-            asyncio.run(orchestrator.start())
-        else:
-            # Legacy single-bot mode
-            logger.info("🔄 Single-bot mode - using legacy TradingBot")
-            bot = TradingBot()
-            asyncio.run(bot.start())
-            bot.stop()
+        # Always use the orchestrator - it handles single and multiple bots
+        logger.info("🔄 Loading bot configuration from config/bots.yaml...")
+        from trading_bot.orchestration.orchestrator import BotOrchestrator
+        orchestrator = BotOrchestrator()
+        asyncio.run(orchestrator.start())
     except KeyboardInterrupt:
         print("\n\nShutting down...")
     except Exception as e:
