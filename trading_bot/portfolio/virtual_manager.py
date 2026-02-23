@@ -36,6 +36,7 @@ class VirtualPortfolioManager:
         allocation: AllocationConfig,
         fence: FenceConfig,
         risk: RiskConfig,
+        logger: Optional[logging.Logger] = None,
     ):
         """Initialize virtual portfolio manager.
 
@@ -45,9 +46,11 @@ class VirtualPortfolioManager:
             allocation: Fund allocation config (type, amount)
             fence: Fence config (type: hard/soft, overage_pct)
             risk: Risk config (stop_loss, take_profit, position sizes)
+            logger: Optional logger instance (if provided, logs will use this logger)
         """
         self.broker = broker
         self.order_manager = order_manager
+        self.logger = logger or logging.getLogger(__name__)
         self.allocation = allocation
         self.fence = fence
         self.risk = risk
@@ -65,7 +68,7 @@ class VirtualPortfolioManager:
             max_portfolio_risk=Decimal(str(risk.max_portfolio_risk)),
         )
 
-        logger.info(
+        self.logger.info(
             f"Virtual portfolio initialized: "
             f"allocation={self.allocated_capital} {allocation.type}, "
             f"fence={fence.type}"
@@ -111,7 +114,7 @@ class VirtualPortfolioManager:
         # Get current price for cost estimation
         current_price = self._real_pm._positions_cache.get(signal.symbol, {}).get('current_price')
         if not current_price:
-            logger.warning(f"Cannot estimate cost for {signal.symbol} - no current price cached")
+            self.logger.warning(f"Cannot estimate cost for {signal.symbol} - no current price cached")
             return False
 
         # Estimate order cost
@@ -125,7 +128,7 @@ class VirtualPortfolioManager:
         if self.fence.type == 'hard':
             # Hard fence: no overage allowed
             if estimated_cost > available:
-                logger.warning(
+                self.logger.warning(
                     f"Buy signal rejected (hard fence): cost ${estimated_cost:.2f} "
                     f"exceeds virtual balance ${available:.2f}"
                 )
@@ -133,13 +136,13 @@ class VirtualPortfolioManager:
         elif self.fence.type == 'soft':
             # Soft fence: allow overage up to configured percentage
             if estimated_cost > max_allowed:
-                logger.warning(
+                self.logger.warning(
                     f"Buy signal rejected (soft fence): cost ${estimated_cost:.2f} "
                     f"exceeds max allowed ${max_allowed:.2f}"
                 )
                 return False
             if estimated_cost > available:
-                logger.warning(
+                self.logger.warning(
                     f"Buy signal using overage: cost ${estimated_cost:.2f}, "
                     f"available ${available:.2f}, allowed ${max_allowed:.2f}"
                 )
@@ -190,7 +193,7 @@ class VirtualPortfolioManager:
         """
         # Validate against fence
         if not self.can_execute_signal(signal):
-            logger.info(f"Signal rejected by fence: {signal.symbol} {signal.action}")
+            self.logger.info(f"Signal rejected by fence: {signal.symbol} {signal.action}")
             return None
 
         # Apply risk controls
@@ -198,12 +201,12 @@ class VirtualPortfolioManager:
         if current_price:
             signal = self.apply_risk_controls(signal, Decimal(str(current_price)))
         else:
-            logger.warning(f"No current price for {signal.symbol}, skipping risk controls")
+            self.logger.warning(f"No current price for {signal.symbol}, skipping risk controls")
 
         # Adjust position size based on virtual balance
         adjusted_qty = self.calculate_position_size(signal)
         if not adjusted_qty:
-            logger.info(f"Position size adjusted to 0 for {signal.symbol}, rejecting signal")
+            self.logger.info(f"Position size adjusted to 0 for {signal.symbol}, rejecting signal")
             return None
 
         signal.quantity = adjusted_qty
@@ -211,18 +214,18 @@ class VirtualPortfolioManager:
         # Submit order
         order_id = self.order_manager.execute_signal(signal)
         if not order_id:
-            logger.error(f"Failed to submit order for {signal.symbol}")
+            self.logger.error(f"Failed to submit order for {signal.symbol}")
             return None
 
         # Update virtual accounting (simplified - real tracking happens on order fill in main.py)
         if signal.action.lower() == 'buy':
             estimated_cost = adjusted_qty * Decimal(str(current_price)) if current_price else Decimal("0")
             self.virtual_spent += estimated_cost
-            logger.debug(f"Virtual spent updated: ${estimated_cost:.2f}, total: ${self.virtual_spent:.2f}")
+            self.logger.debug(f"Virtual spent updated: ${estimated_cost:.2f}, total: ${self.virtual_spent:.2f}")
         elif signal.action.lower() == 'sell':
             estimated_proceeds = adjusted_qty * Decimal(str(current_price)) if current_price else Decimal("0")
             self.virtual_proceeds += estimated_proceeds
-            logger.debug(f"Virtual proceeds updated: ${estimated_proceeds:.2f}, total: ${self.virtual_proceeds:.2f}")
+            self.logger.debug(f"Virtual proceeds updated: ${estimated_proceeds:.2f}, total: ${self.virtual_proceeds:.2f}")
 
         return order_id
 
@@ -251,7 +254,7 @@ class VirtualPortfolioManager:
         current_price = self._real_pm._positions_cache.get(signal.symbol, {}).get('current_price')
         if not current_price:
             # If no price cached, return requested quantity (risky but handles edge case)
-            logger.warning(f"No current price for {signal.symbol}, using requested quantity")
+            self.logger.warning(f"No current price for {signal.symbol}, using requested quantity")
             return qty
 
         current_price = Decimal(str(current_price))
@@ -260,7 +263,7 @@ class VirtualPortfolioManager:
         position_value = qty * current_price
         if position_value > max_position_value:
             adjusted_qty = max_position_value / current_price
-            logger.info(
+            self.logger.info(
                 f"Position size adjusted from {qty} to {adjusted_qty:.4f} "
                 f"for {signal.symbol} to stay within {self.risk.max_position_size*100:.0f}% limit"
             )

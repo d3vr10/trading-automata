@@ -161,6 +161,7 @@ class BotInstance:
                 allocation=self.config.allocation,
                 fence=self.config.fence,
                 risk=self.config.risk,
+                logger=self.logger,
             )
             self.logger.info(f"Portfolio manager initialized (allocation: {self.config.allocation.amount} {self.config.allocation.type}, fence: {self.config.fence.type})")
 
