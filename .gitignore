@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.prod
 *.env
 !.env.example
 docker/.env.prod   # Production secrets, never commit
