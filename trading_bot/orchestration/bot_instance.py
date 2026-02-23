@@ -178,7 +178,7 @@ class BotInstance:
 
             # Warm up strategies
             logger.debug(f"[{self.bot_name}] Warming up strategies...")
-            await warm_up_all_strategies(self.data_provider, self.strategies)
+            await warm_up_all_strategies(self.strategies)
 
             # Record session start
             await self._record_session_start()
