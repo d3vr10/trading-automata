@@ -1,0 +1,1 @@
+"""Trading Automata API Service."""
