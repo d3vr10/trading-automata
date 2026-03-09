@@ -1,32 +1,12 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+# Root workspace - individual services have their own pyproject.toml
+# See: services/trading-engine/pyproject.toml
+#      services/api/pyproject.toml
 
 [project]
-name = "trading-automata"
-version = "0.4.0"
-description = "Trading automation platform - multi-bot orchestration with Alpaca and Coinbase"
+name = "trading-automata-workspace"
+version = "0.5.0"
+description = "Trading Automata - Multi-account trading platform"
 requires-python = ">=3.13"
-dependencies = [
-    "alpaca-py>=0.25.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "python-dotenv>=1.0.0",
-    "PyYAML>=6.0",
-    "pandas>=2.0.0",
-    "numpy>=1.24.0",
-]
-
-[project.scripts]
-automata-cli = "trading_automata.cli:cli"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["trading_automata*", "config*"]
-exclude = ["tests*", "*.tests*"]
-
-[tool.setuptools.package-data]
-config = ["*.yml", "*.yaml"]
 
 [tool.black]
 line-length = 88
@@ -35,16 +15,3 @@ target-version = ['py313']
 [tool.isort]
 profile = "black"
 line_length = 88
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --cov=trading_automata --cov-report=html --cov-report=term"

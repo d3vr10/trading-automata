@@ -47,6 +47,16 @@ logs/
 # Data caching
 data/cache/
 
+# Node.js (web-ui)
+node_modules/
+.next/
+out/
+
+# Claude / AI agent artifacts
+.claude/
+.agents/
+skills-lock.json
+
 # OS
 .DS_Store
 Thumbs.db

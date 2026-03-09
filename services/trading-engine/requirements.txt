@@ -1,0 +1,61 @@
+# Broker SDKs
+alpaca-py>=0.25.0
+coinbase-advanced-py>=0.5.0
+
+# Database
+psycopg[binary]>=3.0.0  # PostgreSQL adapter (async support)
+sqlalchemy[asyncio]>=2.0.0  # Async ORM
+alembic>=1.12.0         # Database migrations
+
+# Configuration
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+PyYAML>=6.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+yfinance>=0.2.0
+
+# Technical Analysis
+pandas-ta>=0.3.14
+
+# Charting
+plotly>=6.1.1             # Interactive visualization library (Plotly.js 3.0.0, Kaleido v1 compatible)
+kaleido>=1.2.0            # Static image export for Plotly (v1 architecture with choreographer)
+
+# Inter-service communication
+redis[hiredis]>=5.0.0
+
+# Monitoring
+prometheus-client>=0.20.0
+
+# Async support
+aiohttp>=3.9.0
+websockets>=12.0
+
+# CLI
+click>=8.0.0          # Command-line interface creation kit
+tabulate>=0.9.0       # Table formatting for CLI output
+colorlog>=6.0.0       # Colored logging output
+
+# Notifications
+python-telegram-bot[webhooks]>=21.0  # Telegram bot API (async support + webhook server)
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.4.0
+isort>=5.12.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+psutil>=6.1.1               # System resource monitoring (optional, for chart diagnostics)

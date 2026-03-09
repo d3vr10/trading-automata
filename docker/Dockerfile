@@ -1,40 +1,7 @@
-FROM python:3.13-slim
-
-# Set working directory
-WORKDIR /app
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Install the package in editable mode (makes trading-cli binary available)
-RUN pip install -e .
-
-# Create logs directory
-RUN mkdir -p logs
-
-# Make entrypoint script executable
-RUN chmod +x docker/entrypoint.sh
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import os; os.path.exists('logs/trading-automata.log') or exit(1)"
-
-# Use entrypoint script for initialization and startup
-ENTRYPOINT ["docker/entrypoint.sh"]
+# DEPRECATED: This Dockerfile is no longer used directly.
+# Each service now has its own Dockerfile:
+#   - services/trading-engine/Dockerfile
+#   - services/api/Dockerfile
+#   - services/web-ui/Dockerfile
+#
+# See docker/docker-compose.yml for the full stack setup.
