@@ -27,6 +27,25 @@ async def send_bot_command(
     return {"request_id": request_id, "action": action, "bot_name": bot_name}
 
 
+async def send_start_bot_command(
+    redis_client: aioredis.Redis,
+    bot_name: str,
+    user_id: int,
+    config: dict,
+) -> dict:
+    """Send a start_bot command with full config to the trading engine."""
+    request_id = str(uuid.uuid4())
+    command = {
+        "action": "start_bot",
+        "bot_name": bot_name,
+        "user_id": user_id,
+        "config": config,
+        "request_id": request_id,
+    }
+    await redis_client.publish(COMMANDS_CHANNEL, json.dumps(command))
+    return {"request_id": request_id, "action": "start_bot", "bot_name": bot_name}
+
+
 async def get_bot_statuses(
     redis_client: aioredis.Redis,
     user_id: int,

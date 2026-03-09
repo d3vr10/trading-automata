@@ -30,6 +30,7 @@ class User(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     broker_credentials = relationship("BrokerCredential", back_populates="user", cascade="all, delete-orphan")
+    bot_configurations = relationship("BotConfiguration", back_populates="user", cascade="all, delete-orphan")
     settings = relationship("UserSetting", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -47,6 +48,31 @@ class BrokerCredential(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="broker_credentials")
+
+
+class BotConfiguration(Base):
+    __tablename__ = "bot_configurations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    strategy_id = Column(String(100), nullable=False)
+    credential_id = Column(Integer, ForeignKey("broker_credentials.id"), nullable=False)
+    allocation = Column(Numeric(20, 2), nullable=False)
+    fence_type = Column(String(20), nullable=False, server_default="hard")
+    fence_overage_pct = Column(Float, nullable=False, server_default="0")
+    stop_loss_pct = Column(Float, nullable=False, server_default="2.0")
+    take_profit_pct = Column(Float, nullable=False, server_default="6.0")
+    max_position_size = Column(Float, nullable=False, server_default="0.1")
+    poll_interval_minutes = Column(Integer, nullable=False, server_default="1")
+    is_active = Column(Boolean, server_default="false")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_bot_config_user_name"),)
+
+    user = relationship("User", back_populates="bot_configurations")
+    credential = relationship("BrokerCredential")
 
 
 class PasswordResetToken(Base):
