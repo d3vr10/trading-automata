@@ -1,4 +1,5 @@
 name: trading-automata
+
 services:
   # PostgreSQL Database
   postgres:
@@ -8,103 +9,92 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-trading-automata}
-
     ports:
-      # Expose on localhost:5432 for external connections (optional)
       - "5432:5432"
-
     volumes:
-      # Persist database data
       - postgres_data:/var/lib/postgresql/data
-      # Optional: Initialize database with SQL script
-      # - ../alembic/versions:/docker-entrypoint-initdb.d
-
-    # Health check - verify database is ready
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trading-automata}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-
-    # Keep container running
     restart: unless-stopped
-
     networks:
       - trading-network
-
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-  # TradingAutomata Application
-  trading-automata:
+  # Redis (inter-service communication)
+  redis:
+    image: redis:7-alpine
+    container_name: trading-automata-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - trading-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Trading Engine Service
+  trading-engine:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
-    container_name: trading-automata
+      dockerfile: services/trading-engine/Dockerfile
+    container_name: trading-automata-engine
     env_file: .env
-
-    # Wait for PostgreSQL to be healthy before starting
     depends_on:
       postgres:
         condition: service_healthy
-
+      redis:
+        condition: service_healthy
     environment:
-      # API Credentials (set via .env or environment)
-      ALPACA_API_KEY: ${ALPACA_API_KEY}
-      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
-      COINBASE_API_KEY: ${COINBASE_API_KEY:-}
-      COINBASE_SECRET_KEY: ${COINBASE_SECRET_KEY:-}
-      COINBASE_PASSPHRASE: ${COINBASE_PASSPHRASE:-}
-
-      # Trading Configuration
-      TRADING_ENV: ${TRADING_ENV:-paper}
-      BROKER: ${BROKER:-alpaca}
-
-      # Logging
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_FILE: ${LOG_FILE:-/app/logs/trading-automata.log}
-
-      # Strategy Configuration
-      STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-config/strategies.yaml}
-      CONFIG_FILE_PATH: ${CONFIG_FILE_PATH:-config/config.yml}
-
-      # Risk Management
-      MAX_POSITION_SIZE: ${MAX_POSITION_SIZE:-0.1}
-      MAX_PORTFOLIO_RISK: ${MAX_PORTFOLIO_RISK:-0.02}
-
-      # Database Configuration
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/trading-automata}
+      # Database
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-trading-automata}}
       DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
       DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-20}
 
-      # Telegram Bot Configuration (optional)
-      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
-      # Health Check Configuration
+      # Fernet key (same as API — needed to decrypt broker credentials from DB)
+      FERNET_KEY: ${FERNET_KEY}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: /app/logs/trading-automata.log
+
+      # Strategy configuration
+      STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-config/strategies.yaml}
+      CONFIG_FILE_PATH: ${CONFIG_FILE_PATH:-config/config.yml}
+
+      # Risk management
+      MAX_POSITION_SIZE: ${MAX_POSITION_SIZE:-0.1}
+      MAX_PORTFOLIO_RISK: ${MAX_PORTFOLIO_RISK:-0.02}
+
+      # Health check
       HEALTH_CHECK_INTERVAL: ${HEALTH_CHECK_INTERVAL:-300}
 
-      # Strategy Warm-up Configuration
-      USE_CACHED_DATA: ${USE_CACHED_DATA:-true}
-
     volumes:
-      # Mount logs directory for external access
       - ./logs:/app/logs
-      # Mount config files for easy editing
       - ../config:/app/config
-      # Persist cached data across container restarts
       - cache_data:/app/data/cache
-      # Optional: Mount entire src for development
-      # - ../src:/app/src
-
-    # Keep container running even if process exits
     restart: unless-stopped
-
-    # Resource limits
     deploy:
       resources:
         limits:
@@ -113,23 +103,141 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - trading-network
 
-    # Logging configuration
+  # API Service (FastAPI)
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    container_name: trading-automata-api
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-trading-automata}}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      FERNET_KEY: ${FERNET_KEY}
+      ROOT_USERNAME: ${ROOT_USERNAME:-root}
+      ROOT_PASSWORD: ${ROOT_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - trading-network
+
+  # Web UI (NextJS)
+  web-ui:
+    build:
+      context: ../services/web-ui
+      dockerfile: Dockerfile
+    container_name: trading-automata-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+      NEXT_PUBLIC_WS_URL: ws://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - trading-network
+
+  # Prometheus (metrics collection)
+  prometheus:
+    image: prom/prometheus:v3.8.1
+    container_name: trading-automata-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - trading-engine
+      - web-ui
+    restart: unless-stopped
+    networks:
+      - trading-network
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
+  # Grafana (dashboards)
+  grafana:
+    image: grafana/grafana:12.3.1
+    container_name: trading-automata-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
     networks:
       - trading-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  # Named volume for PostgreSQL data persistence
   postgres_data:
     driver: local
-  # Named volume for strategy cache data persistence
+  redis_data:
+    driver: local
   cache_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:

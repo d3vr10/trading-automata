@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # API Service
+  - job_name: "api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: "api"
+
+  # Trading Engine
+  - job_name: "trading-engine"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["trading-engine:8081"]
+        labels:
+          service: "trading-engine"
+
+  # Web UI (NextJS OpenTelemetry)
+  - job_name: "web-ui"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["web-ui:9464"]
+        labels:
+          service: "web-ui"
