@@ -56,6 +56,7 @@ out/
 .claude/
 .agents/
 skills-lock.json
+/screenshot*.png
 
 # OS
 .DS_Store
