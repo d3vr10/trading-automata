@@ -104,6 +104,39 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Pointer cursor for interactive elements */
+  button,
+  [role="button"],
+  a,
+  select,
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"],
+  [data-slot="button"],
+  [data-radix-collection-item] {
+    cursor: pointer;
+  }
+
+  /* Custom scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.30 0.04 280 / 50%) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0.30 0.04 280 / 50%);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.40 0.05 280 / 60%);
+  }
 }
 
 /* Glassmorphism utilities */

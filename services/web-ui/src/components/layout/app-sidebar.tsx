@@ -169,7 +169,7 @@ export function AppSidebar() {
               <div className="text-muted-foreground text-xs capitalize">{user?.role}</div>
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center justify-center gap-1">
             <LocaleSwitcher />
             <SidebarMenuButton
               onClick={logout}

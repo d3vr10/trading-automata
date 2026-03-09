@@ -16,6 +16,9 @@ import { toast } from "sonner";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { CredentialSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 export default function BrokersPage() {
   const t = useTranslations("settings");
@@ -119,25 +122,27 @@ export default function BrokersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm text-muted-foreground">{t("brokers.dialog.brokerType")}</Label>
-                  <select
-                    className="flex h-10 w-full rounded-xl border border-border/50 bg-input/50 px-3 py-1 text-sm"
-                    value={brokerType}
-                    onChange={(e) => setBrokerType(e.target.value)}
-                  >
-                    <option value="alpaca">{t("brokers.dialog.alpaca")}</option>
-                    <option value="coinbase">{t("brokers.dialog.coinbase")}</option>
-                  </select>
+                  <Select value={brokerType} onValueChange={(v) => { setBrokerType(v); if (v === "coinbase") setEnvironment("live"); }}>
+                    <SelectTrigger className="h-10 w-full rounded-xl border-border/50 bg-input/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="glass-strong border-border/30 rounded-xl">
+                      <SelectItem value="alpaca">{t("brokers.dialog.alpaca")}</SelectItem>
+                      <SelectItem value="coinbase">{t("brokers.dialog.coinbase")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm text-muted-foreground">{t("brokers.dialog.env")}</Label>
-                  <select
-                    className="flex h-10 w-full rounded-xl border border-border/50 bg-input/50 px-3 py-1 text-sm"
-                    value={environment}
-                    onChange={(e) => setEnvironment(e.target.value)}
-                  >
-                    <option value="paper">{t("brokers.dialog.paper")}</option>
-                    <option value="live">{t("brokers.dialog.live")}</option>
-                  </select>
+                  <Select value={brokerType === "coinbase" ? "live" : environment} onValueChange={setEnvironment} disabled={brokerType === "coinbase"}>
+                    <SelectTrigger className="h-10 w-full rounded-xl border-border/50 bg-input/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="glass-strong border-border/30 rounded-xl">
+                      <SelectItem value="paper">{t("brokers.dialog.paper")}</SelectItem>
+                      <SelectItem value="live">{t("brokers.dialog.live")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
