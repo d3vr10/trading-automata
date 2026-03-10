@@ -1,5 +1,6 @@
 """Trade, position, and metrics query routes."""
 
+from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -22,7 +23,9 @@ class TradeResponse(BaseModel):
     bot_name: Optional[str]
     entry_price: float
     entry_quantity: float
+    entry_timestamp: Optional[datetime]
     exit_price: Optional[float]
+    exit_timestamp: Optional[datetime]
     gross_pnl: Optional[float]
     net_pnl: Optional[float]
     pnl_percent: Optional[float]
@@ -70,6 +73,12 @@ class TradeSummaryResponse(BaseModel):
     win_rate: float
 
 
+def _parse_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value)
+
+
 @router.get("/trades", response_model=list[TradeResponse])
 async def list_trades(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -77,6 +86,8 @@ async def list_trades(
     symbol: Optional[str] = None,
     strategy: Optional[str] = None,
     bot_name: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -84,6 +95,7 @@ async def list_trades(
     return await trade_service.list_trades(
         db, current_user.id,
         symbol=symbol, strategy=strategy, bot_name=bot_name,
+        date_from=_parse_date(date_from), date_to=_parse_date(date_to),
         limit=limit, offset=offset,
     )
 
@@ -121,6 +133,15 @@ async def get_trade_summary(
     return await trade_service.get_trade_summary(db, current_user.id)
 
 
+@router.get("/trades/duration-stats")
+async def get_trade_duration_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Average trade holding time per bot."""
+    return await trade_service.get_trade_duration_stats(db, current_user.id)
+
+
 @router.get("/portfolio/summary")
 async def get_portfolio_summary(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -135,15 +156,25 @@ async def get_equity_curve(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     days: int = Query(default=90, le=365),
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ):
     """Daily cumulative P&L time series for equity curve chart."""
-    return await trade_service.get_equity_curve(db, current_user.id, days=days)
+    return await trade_service.get_equity_curve(
+        db, current_user.id, days=days,
+        date_from=_parse_date(date_from), date_to=_parse_date(date_to),
+    )
 
 
 @router.get("/analytics")
 async def get_analytics(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ):
     """Comprehensive analytics: by strategy, by symbol, equity curve."""
-    return await trade_service.get_analytics(db, current_user.id)
+    return await trade_service.get_analytics(
+        db, current_user.id,
+        date_from=_parse_date(date_from), date_to=_parse_date(date_to),
+    )

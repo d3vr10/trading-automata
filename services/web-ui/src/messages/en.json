@@ -56,7 +56,12 @@
     "statusStopped": "Stopped",
     "availableCash": "available",
     "byAccount": "By Account",
-    "portfolioHistory": "Portfolio Value Over Time"
+    "portfolioHistory": "Portfolio Value Over Time",
+    "perAccountEquity": "Equity by Account",
+    "drawdown": "Drawdown",
+    "drawdownOverview": "Drawdown",
+    "currentDrawdown": "Current",
+    "maxDrawdown": "Max"
   },
   "strategies": {
     "title": "Strategies",
@@ -136,7 +141,10 @@
       "bestTrade": "Best Trade",
       "worstTrade": "Worst Trade",
       "noStats": "No trade data yet",
-      "performance": "Performance"
+      "performance": "Performance",
+      "maxDrawdown": "Max Drawdown",
+      "currentDrawdown": "Current Drawdown",
+      "avgHoldingTime": "Avg Holding Time"
     },
     "new": {
       "title": "Create Bot",
@@ -168,7 +176,10 @@
     "next": "Next",
     "filters": {
       "allSymbols": "All Symbols",
-      "allStrategies": "All Strategies"
+      "allStrategies": "All Strategies",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "clear": "Clear"
     },
     "table": {
       "symbol": "Symbol",
@@ -201,6 +212,11 @@
   },
   "metrics": {
     "title": "Analytics",
+    "filters": {
+      "dateFrom": "From",
+      "dateTo": "To",
+      "clear": "Clear"
+    },
     "tabs": {
       "overview": "Overview",
       "strategies": "By Strategy",

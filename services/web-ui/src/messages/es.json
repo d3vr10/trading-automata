@@ -56,7 +56,12 @@
     "statusStopped": "Detenido",
     "availableCash": "disponible",
     "byAccount": "Por Cuenta",
-    "portfolioHistory": "Valor del Portafolio en el Tiempo"
+    "portfolioHistory": "Valor del Portafolio en el Tiempo",
+    "perAccountEquity": "Capital por Cuenta",
+    "drawdown": "Caída",
+    "drawdownOverview": "Caída Máxima",
+    "currentDrawdown": "Actual",
+    "maxDrawdown": "Máxima"
   },
   "strategies": {
     "title": "Estrategias",
@@ -136,7 +141,10 @@
       "bestTrade": "Mejor Operación",
       "worstTrade": "Peor Operación",
       "noStats": "Sin datos de operaciones aún",
-      "performance": "Rendimiento"
+      "performance": "Rendimiento",
+      "maxDrawdown": "Caída Máxima",
+      "currentDrawdown": "Caída Actual",
+      "avgHoldingTime": "Tiempo Prom. de Retención"
     },
     "new": {
       "title": "Crear Bot",
@@ -168,7 +176,10 @@
     "next": "Siguiente",
     "filters": {
       "allSymbols": "Todos los Símbolos",
-      "allStrategies": "Todas las Estrategias"
+      "allStrategies": "Todas las Estrategias",
+      "dateFrom": "Desde",
+      "dateTo": "Hasta",
+      "clear": "Limpiar"
     },
     "table": {
       "symbol": "Símbolo",
@@ -201,6 +212,11 @@
   },
   "metrics": {
     "title": "Análisis",
+    "filters": {
+      "dateFrom": "Desde",
+      "dateTo": "Hasta",
+      "clear": "Limpiar"
+    },
     "tabs": {
       "overview": "Resumen",
       "strategies": "Por Estrategia",

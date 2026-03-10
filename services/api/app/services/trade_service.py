@@ -1,9 +1,11 @@
 """Trade and position query business logic."""
 
-from sqlalchemy import select, desc, func, case, cast, Date
+from datetime import datetime
+
+from sqlalchemy import select, desc, func, case, cast, Date, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Trade, Position, PerformanceMetric
+from app.models import Trade, Position, PerformanceMetric, PortfolioSnapshot
 
 
 async def list_trades(
@@ -12,6 +14,8 @@ async def list_trades(
     symbol: str | None = None,
     strategy: str | None = None,
     bot_name: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Trade]:
@@ -22,6 +26,10 @@ async def list_trades(
         query = query.where(Trade.strategy == strategy)
     if bot_name:
         query = query.where(Trade.bot_name == bot_name)
+    if date_from:
+        query = query.where(Trade.entry_timestamp >= date_from)
+    if date_to:
+        query = query.where(Trade.entry_timestamp <= date_to)
     query = query.order_by(desc(Trade.entry_timestamp)).offset(offset).limit(limit)
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -56,14 +64,24 @@ async def get_performance_metrics(
     return list(result.scalars().all())
 
 
-async def get_trade_summary(db: AsyncSession, user_id: int) -> dict:
+async def get_trade_summary(
+    db: AsyncSession,
+    user_id: int,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict:
     """Aggregate trade stats for dashboard."""
+    where = [Trade.user_id == user_id]
+    if date_from:
+        where.append(Trade.entry_timestamp >= date_from)
+    if date_to:
+        where.append(Trade.entry_timestamp <= date_to)
     result = await db.execute(
         select(
             func.count(Trade.id).label("total_trades"),
             func.sum(Trade.net_pnl).label("total_pnl"),
             func.count(Trade.id).filter(Trade.is_winning_trade == True).label("winning_trades"),
-        ).where(Trade.user_id == user_id)
+        ).where(*where)
     )
     row = result.one()
     total = row.total_trades or 0
@@ -146,21 +164,29 @@ async def get_portfolio_summary(db: AsyncSession, user_id: int) -> dict:
     }
 
 
-async def get_equity_curve(db: AsyncSession, user_id: int, days: int = 90) -> list[dict]:
+async def get_equity_curve(
+    db: AsyncSession,
+    user_id: int,
+    days: int = 90,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> list[dict]:
     """Daily cumulative P&L for equity curve chart.
 
     Returns list of {date, daily_pnl, cumulative_pnl} entries.
     """
+    where = [Trade.user_id == user_id, Trade.exit_timestamp.isnot(None)]
+    if date_from:
+        where.append(Trade.exit_timestamp >= date_from)
+    if date_to:
+        where.append(Trade.exit_timestamp <= date_to)
     result = await db.execute(
         select(
             cast(Trade.exit_timestamp, Date).label("trade_date"),
             func.sum(Trade.net_pnl).label("daily_pnl"),
             func.count(Trade.id).label("trade_count"),
         )
-        .where(
-            Trade.user_id == user_id,
-            Trade.exit_timestamp.isnot(None),
-        )
+        .where(*where)
         .group_by("trade_date")
         .order_by("trade_date")
         .limit(days)
@@ -241,12 +267,22 @@ async def get_bot_equity_curve(
     return curve
 
 
-async def get_analytics(db: AsyncSession, user_id: int) -> dict:
+async def get_analytics(
+    db: AsyncSession,
+    user_id: int,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict:
     """Comprehensive analytics for the metrics page."""
     # Overall stats
-    summary = await get_trade_summary(db, user_id)
+    summary = await get_trade_summary(db, user_id, date_from=date_from, date_to=date_to)
 
     # Stats by strategy
+    where = [Trade.user_id == user_id]
+    if date_from:
+        where.append(Trade.entry_timestamp >= date_from)
+    if date_to:
+        where.append(Trade.entry_timestamp <= date_to)
     strat_result = await db.execute(
         select(
             Trade.strategy,
@@ -257,7 +293,7 @@ async def get_analytics(db: AsyncSession, user_id: int) -> dict:
             func.max(Trade.net_pnl).label("best_trade"),
             func.min(Trade.net_pnl).label("worst_trade"),
         )
-        .where(Trade.user_id == user_id)
+        .where(*where)
         .group_by(Trade.strategy)
     )
     by_strategy = []
@@ -288,7 +324,7 @@ async def get_analytics(db: AsyncSession, user_id: int) -> dict:
             func.count(case((Trade.is_winning_trade == True, 1))).label("winning_trades"),
             func.sum(Trade.net_pnl).label("total_pnl"),
         )
-        .where(Trade.user_id == user_id)
+        .where(*where)
         .group_by(Trade.symbol)
         .order_by(desc("total_pnl"))
     )
@@ -303,7 +339,7 @@ async def get_analytics(db: AsyncSession, user_id: int) -> dict:
     ]
 
     # Equity curve
-    equity_curve = await get_equity_curve(db, user_id)
+    equity_curve = await get_equity_curve(db, user_id, date_from=date_from, date_to=date_to)
 
     return {
         "summary": summary,
@@ -311,3 +347,105 @@ async def get_analytics(db: AsyncSession, user_id: int) -> dict:
         "by_symbol": by_symbol,
         "equity_curve": equity_curve,
     }
+
+
+async def get_trade_duration_stats(
+    db: AsyncSession,
+    user_id: int,
+    bot_name: str | None = None,
+) -> list[dict]:
+    """Average trade holding time per bot (closed trades only)."""
+    where = [
+        Trade.user_id == user_id,
+        Trade.exit_timestamp.isnot(None),
+    ]
+    if bot_name:
+        where.append(Trade.bot_name == bot_name)
+
+    result = await db.execute(
+        select(
+            Trade.bot_name,
+            func.avg(
+                extract("epoch", Trade.exit_timestamp) - extract("epoch", Trade.entry_timestamp)
+            ).label("avg_seconds"),
+            func.count(Trade.id).label("trade_count"),
+        )
+        .where(*where)
+        .group_by(Trade.bot_name)
+    )
+    return [
+        {
+            "bot_name": row.bot_name or "unknown",
+            "avg_holding_seconds": round(float(row.avg_seconds or 0)),
+            "trade_count": row.trade_count,
+        }
+        for row in result.all()
+    ]
+
+
+async def get_drawdown_stats(
+    db: AsyncSession,
+    user_id: int,
+    bot_name: str | None = None,
+) -> list[dict]:
+    """Max and current drawdown per bot from portfolio snapshots."""
+    where = [PortfolioSnapshot.user_id == user_id]
+    if bot_name:
+        where.append(PortfolioSnapshot.bot_name == bot_name)
+
+    result = await db.execute(
+        select(
+            PortfolioSnapshot.bot_name,
+            func.max(PortfolioSnapshot.drawdown_pct).label("max_drawdown_pct"),
+            func.max(PortfolioSnapshot.high_water_mark).label("high_water_mark"),
+        )
+        .where(*where)
+        .group_by(PortfolioSnapshot.bot_name)
+    )
+
+    stats = []
+    for row in result.all():
+        # Get current (latest) drawdown
+        latest = await db.execute(
+            select(PortfolioSnapshot.drawdown_pct, PortfolioSnapshot.equity)
+            .where(
+                PortfolioSnapshot.user_id == user_id,
+                PortfolioSnapshot.bot_name == row.bot_name,
+            )
+            .order_by(desc(PortfolioSnapshot.snapshot_date))
+            .limit(1)
+        )
+        latest_row = latest.first()
+        stats.append({
+            "bot_name": row.bot_name,
+            "max_drawdown_pct": round(float(row.max_drawdown_pct or 0), 2),
+            "current_drawdown_pct": round(float(latest_row.drawdown_pct if latest_row else 0), 2),
+            "high_water_mark": float(row.high_water_mark or 0),
+        })
+    return stats
+
+
+async def get_per_bot_portfolio_history(
+    db: AsyncSession,
+    user_id: int,
+    days: int = 90,
+) -> list[dict]:
+    """Per-bot daily equity history (not aggregated)."""
+    result = await db.execute(
+        select(
+            PortfolioSnapshot.snapshot_date,
+            PortfolioSnapshot.bot_name,
+            PortfolioSnapshot.equity,
+        )
+        .where(PortfolioSnapshot.user_id == user_id)
+        .order_by(PortfolioSnapshot.snapshot_date)
+        .limit(days * 20)  # generous limit for multiple bots
+    )
+    return [
+        {
+            "date": str(row.snapshot_date),
+            "bot_name": row.bot_name,
+            "equity": float(row.equity),
+        }
+        for row in result.all()
+    ]

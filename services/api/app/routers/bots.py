@@ -259,6 +259,25 @@ async def get_portfolio_history(
     return await bot_service.get_portfolio_history(db, current_user.id, days)
 
 
+@router.get("/portfolio/history/by-bot")
+async def get_per_bot_portfolio_history(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = 90,
+):
+    """Per-bot daily equity history for multi-line chart."""
+    return await trade_service.get_per_bot_portfolio_history(db, current_user.id, days)
+
+
+@router.get("/drawdown")
+async def get_drawdown_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Max and current drawdown per bot."""
+    return await trade_service.get_drawdown_stats(db, current_user.id)
+
+
 @router.get("/accounts")
 async def get_account_snapshots(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -346,6 +365,18 @@ async def get_bot_stats(
         stats["cash"] = snapshot.get("cash")
 
     stats["equity_curve"] = equity_curve
+
+    # Add duration stats
+    duration_stats = await trade_service.get_trade_duration_stats(db, current_user.id, bot_name=bot.name)
+    if duration_stats:
+        stats["avg_holding_time_seconds"] = duration_stats[0]["avg_holding_seconds"]
+
+    # Add drawdown stats
+    drawdown_stats = await trade_service.get_drawdown_stats(db, current_user.id, bot_name=bot.name)
+    if drawdown_stats:
+        stats["max_drawdown_pct"] = drawdown_stats[0]["max_drawdown_pct"]
+        stats["current_drawdown_pct"] = drawdown_stats[0]["current_drawdown_pct"]
+
     return stats
 
 

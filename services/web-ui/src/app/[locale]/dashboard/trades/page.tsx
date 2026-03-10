@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { listTrades, type Trade } from "@/lib/api";
 import { TableSkeleton } from "@/components/skeletons";
 
@@ -15,13 +16,20 @@ export default function TradesPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const limit = 25;
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const data = await listTrades({ limit, offset });
+        const data = await listTrades({
+          limit,
+          offset,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        });
         setTrades(data);
       } catch {
         setTrades([]);
@@ -30,11 +38,48 @@ export default function TradesPage() {
       }
     }
     load();
-  }, [offset]);
+  }, [offset, dateFrom, dateTo]);
+
+  function handleDateChange(type: "from" | "to", value: string) {
+    setOffset(0);
+    if (type === "from") setDateFrom(value);
+    else setDateTo(value);
+  }
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground">{t("filters.dateFrom")}</label>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => handleDateChange("from", e.target.value)}
+            className="h-8 w-auto rounded-lg text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground">{t("filters.dateTo")}</label>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => handleDateChange("to", e.target.value)}
+            className="h-8 w-auto rounded-lg text-sm"
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-lg h-8 text-xs"
+            onClick={() => { setDateFrom(""); setDateTo(""); setOffset(0); }}
+          >
+            {t("filters.clear")}
+          </Button>
+        )}
+      </div>
 
       <div className="glass rounded-2xl overflow-hidden">
         <Table>

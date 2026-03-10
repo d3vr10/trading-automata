@@ -7,6 +7,7 @@ import uuid
 from datetime import date
 
 import redis.asyncio as aioredis
+from sqlalchemy import select, func
 
 logger = logging.getLogger(__name__)
 
@@ -162,19 +163,38 @@ async def persist_portfolio_snapshots(
 
             async with session_factory() as session:
                 from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                equity = snapshot.get("equity", 0)
+
+                # Compute high-water mark from previous snapshots
+                hwm_result = await session.execute(
+                    select(func.max(PortfolioSnapshot.high_water_mark))
+                    .where(
+                        PortfolioSnapshot.user_id == user_id,
+                        PortfolioSnapshot.bot_name == bot_name,
+                    )
+                )
+                prev_hwm = float(hwm_result.scalar() or 0)
+                hwm = max(prev_hwm, float(equity))
+                drawdown_pct = ((hwm - float(equity)) / hwm * 100) if hwm > 0 else 0
+
                 stmt = pg_insert(PortfolioSnapshot).values(
                     user_id=user_id,
                     bot_name=bot_name,
                     snapshot_date=today,
-                    equity=snapshot.get("equity", 0),
+                    equity=equity,
                     cash=snapshot.get("cash", 0),
                     broker_type=snapshot.get("broker_type"),
                     currency=snapshot.get("currency", "USD"),
+                    high_water_mark=hwm,
+                    drawdown_pct=round(drawdown_pct, 4),
                 ).on_conflict_do_update(
                     constraint="uq_portfolio_snapshot_daily",
                     set_={
-                        "equity": snapshot.get("equity", 0),
+                        "equity": equity,
                         "cash": snapshot.get("cash", 0),
+                        "high_water_mark": hwm,
+                        "drawdown_pct": round(drawdown_pct, 4),
                     },
                 )
                 await session.execute(stmt)

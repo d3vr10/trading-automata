@@ -200,6 +200,9 @@ class PortfolioSnapshot(Base):
     currency = Column(String(10), nullable=False, server_default="USD")
     created_at = Column(DateTime, server_default=func.now())
 
+    high_water_mark = Column(Numeric(20, 8), nullable=False, server_default="0")
+    drawdown_pct = Column(Float, nullable=False, server_default="0")
+
     __table_args__ = (
         UniqueConstraint("user_id", "bot_name", "snapshot_date", name="uq_portfolio_snapshot_daily"),
     )

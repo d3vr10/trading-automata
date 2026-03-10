@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CardSkeleton, ChartSkeleton } from "@/components/skeletons";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -12,25 +13,55 @@ import { Sparkline } from "@/components/charts/sparkline";
 import { MiniBarChart } from "@/components/charts/mini-bar-chart";
 import { ProgressRing } from "@/components/charts/progress-ring";
 import {
-  BarChart3, TrendingUp, Trophy, AlertTriangle,
+  BarChart3, Trophy,
 } from "lucide-react";
 
 export default function MetricsPage() {
   const t = useTranslations("metrics");
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
-    getAnalytics()
+    setLoading(true);
+    getAnalytics({
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    })
       .then(setAnalytics)
       .catch(() => setAnalytics(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [dateFrom, dateTo]);
+
+  function handleDateChange(type: "from" | "to", value: string) {
+    if (type === "from") setDateFrom(value);
+    else setDateTo(value);
+  }
+
+  const dateFilters = (
+    <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-muted-foreground">{t("filters.dateFrom")}</label>
+        <Input type="date" value={dateFrom} onChange={(e) => handleDateChange("from", e.target.value)} className="h-8 w-auto rounded-lg text-sm" />
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-muted-foreground">{t("filters.dateTo")}</label>
+        <Input type="date" value={dateTo} onChange={(e) => handleDateChange("to", e.target.value)} className="h-8 w-auto rounded-lg text-sm" />
+      </div>
+      {(dateFrom || dateTo) && (
+        <Button variant="ghost" size="sm" className="rounded-lg h-8 text-xs" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+          {t("filters.clear")}
+        </Button>
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        {dateFilters}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }, (_, i) => <CardSkeleton key={i} />)}
         </div>
@@ -43,15 +74,13 @@ export default function MetricsPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        {dateFilters}
         <div className="glass rounded-2xl p-12 text-center space-y-4">
           <div className="h-14 w-14 rounded-2xl bg-chart-4/10 flex items-center justify-center mx-auto">
             <BarChart3 className="h-7 w-7 text-chart-4" />
           </div>
           <div>
             <h2 className="text-lg font-semibold">{t("overview.noData")}</h2>
-            <p className="text-muted-foreground text-sm mt-1 max-w-md mx-auto">
-              {t("overview.noData")}
-            </p>
           </div>
         </div>
       </div>
@@ -60,11 +89,12 @@ export default function MetricsPage() {
 
   const { summary, by_strategy, by_symbol, equity_curve } = analytics;
   const bestStrategy = by_strategy.reduce((best, s) => s.win_rate > (best?.win_rate ?? 0) ? s : best, by_strategy[0]);
-  const worstStrategy = by_strategy.reduce((worst, s) => s.total_pnl < (worst?.total_pnl ?? 0) ? s : worst, by_strategy[0]);
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+
+      {dateFilters}
 
       {/* Overview stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

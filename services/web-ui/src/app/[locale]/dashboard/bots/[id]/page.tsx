@@ -69,6 +69,13 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
+
 export default function BotDetailPage() {
   const t = useTranslations("bots");
   const params = useParams<{ id: string }>();
@@ -327,6 +334,45 @@ export default function BotDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Drawdown + Holding Time */}
+          {(stats.max_drawdown_pct != null || stats.avg_holding_time_seconds != null) && (
+            <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+              {stats.max_drawdown_pct != null && (
+                <div className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <TrendingDown className="h-3.5 w-3.5" />
+                    {t("detail.maxDrawdown")}
+                  </div>
+                  <div className={`text-xl font-semibold mt-1 ${stats.max_drawdown_pct > 10 ? "text-destructive" : ""}`}>
+                    {stats.max_drawdown_pct.toFixed(2)}%
+                  </div>
+                </div>
+              )}
+              {stats.current_drawdown_pct != null && (
+                <div className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <TrendingDown className="h-3.5 w-3.5" />
+                    {t("detail.currentDrawdown")}
+                  </div>
+                  <div className={`text-xl font-semibold mt-1 ${stats.current_drawdown_pct > 5 ? "text-destructive" : ""}`}>
+                    {stats.current_drawdown_pct.toFixed(2)}%
+                  </div>
+                </div>
+              )}
+              {stats.avg_holding_time_seconds != null && (
+                <div className="glass rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    {t("detail.avgHoldingTime")}
+                  </div>
+                  <div className="text-xl font-semibold mt-1">
+                    {formatDuration(stats.avg_holding_time_seconds)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Mini Equity Curve */}
           {stats.equity_curve.length >= 2 && (
