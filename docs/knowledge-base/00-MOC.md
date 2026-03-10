@@ -30,14 +30,20 @@ How you know the system is healthy and diagnose problems.
 10. [[10-faulty-bot-detection]] — The 4 conditions, why each matters, how it surfaces
 11. [[11-grafana-dashboards]] — Dashboard structure, panel rationale, alert rules
 
-## Tier 4: Infrastructure & Deployment
+## Tier 4: Web UI & Analytics
+
+How data is presented and interacted with.
+
+17. [[17-web-ui-dashboard]] — Why per-account over global, drawdown via HWM, real-time updates, information hierarchy
+
+## Tier 5: Infrastructure & Deployment
 
 How the whole thing runs in production.
 
 12. [[12-docker-compose-topology]] — Service graph, networking, volumes, resource limits
 13. [[13-development-workflow]] — Local setup, running services, debugging tips
 
-## Tier 5: Deepening Your Engineering Background
+## Tier 6: Deepening Your Engineering Background
 
 General concepts that apply beyond this project.
 
@@ -53,4 +59,5 @@ General concepts that apply beyond this project.
 **Day 2:** Notes 5-8 (trading domain)
 **Day 3:** Notes 9-11 (observability)
 **Day 4:** Notes 12-13 (infrastructure)
+**Day 5:** Note 17 (web UI dashboard)
 **Ongoing:** Notes 14-16 (background concepts, reference as needed)
