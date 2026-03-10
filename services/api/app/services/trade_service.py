@@ -181,6 +181,66 @@ async def get_equity_curve(db: AsyncSession, user_id: int, days: int = 90) -> li
     return curve
 
 
+async def get_bot_stats(db: AsyncSession, user_id: int, bot_name: str) -> dict:
+    """Aggregate trade stats for a specific bot."""
+    result = await db.execute(
+        select(
+            func.count(Trade.id).label("total_trades"),
+            func.sum(Trade.net_pnl).label("total_pnl"),
+            func.count(case((Trade.is_winning_trade == True, 1))).label("winning_trades"),
+            func.max(Trade.net_pnl).label("best_trade"),
+            func.min(Trade.net_pnl).label("worst_trade"),
+            func.avg(Trade.pnl_percent).label("avg_pnl_percent"),
+        ).where(Trade.user_id == user_id, Trade.bot_name == bot_name)
+    )
+    row = result.one()
+    total = row.total_trades or 0
+    winning = row.winning_trades or 0
+    return {
+        "total_trades": total,
+        "total_pnl": float(row.total_pnl or 0),
+        "winning_trades": winning,
+        "win_rate": round(winning / total * 100, 1) if total > 0 else 0,
+        "best_trade": float(row.best_trade or 0),
+        "worst_trade": float(row.worst_trade or 0),
+        "avg_pnl_percent": round(float(row.avg_pnl_percent or 0), 2),
+    }
+
+
+async def get_bot_equity_curve(
+    db: AsyncSession, user_id: int, bot_name: str, days: int = 90,
+) -> list[dict]:
+    """Daily cumulative P&L for a specific bot."""
+    result = await db.execute(
+        select(
+            cast(Trade.exit_timestamp, Date).label("trade_date"),
+            func.sum(Trade.net_pnl).label("daily_pnl"),
+            func.count(Trade.id).label("trade_count"),
+        )
+        .where(
+            Trade.user_id == user_id,
+            Trade.bot_name == bot_name,
+            Trade.exit_timestamp.isnot(None),
+        )
+        .group_by("trade_date")
+        .order_by("trade_date")
+        .limit(days)
+    )
+    rows = result.all()
+    cumulative = 0.0
+    curve = []
+    for row in rows:
+        daily = float(row.daily_pnl or 0)
+        cumulative += daily
+        curve.append({
+            "date": str(row.trade_date),
+            "daily_pnl": round(daily, 2),
+            "cumulative_pnl": round(cumulative, 2),
+            "trade_count": row.trade_count,
+        })
+    return curve
+
+
 async def get_analytics(db: AsyncSession, user_id: int) -> dict:
     """Comprehensive analytics for the metrics page."""
     # Overall stats

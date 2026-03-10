@@ -53,7 +53,10 @@
     "lastClosedTrades": "Last {count} closed trades",
     "statusRunning": "Running",
     "statusPaused": "Paused",
-    "statusStopped": "Stopped"
+    "statusStopped": "Stopped",
+    "availableCash": "available",
+    "byAccount": "By Account",
+    "portfolioHistory": "Portfolio Value Over Time"
   },
   "strategies": {
     "title": "Strategies",
@@ -123,7 +126,17 @@
       "open": "Open",
       "stopLoss": "Stop Loss",
       "takeProfit": "Take Profit",
-      "maxPositionSize": "Max Position Size"
+      "maxPositionSize": "Max Position Size",
+      "activityFeed": "Activity Feed",
+      "totalPnl": "Total P&L",
+      "winRate": "Win Rate",
+      "tradeCount": "Trades",
+      "equity": "Equity",
+      "equityCurve": "Equity Curve",
+      "bestTrade": "Best Trade",
+      "worstTrade": "Worst Trade",
+      "noStats": "No trade data yet",
+      "performance": "Performance"
     },
     "new": {
       "title": "Create Bot",

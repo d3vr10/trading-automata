@@ -64,17 +64,30 @@ class EventPublisher:
         except Exception as e:
             logger.warning(f"Failed to update bot status '{bot_name}': {e}")
 
+    async def publish_cycle_complete(self, bot_name: str, cycle_data: Dict[str, Any],
+                                     user_id: Optional[int] = None) -> None:
+        await self.publish("cycle_complete", cycle_data, user_id, bot_name)
+        await self._append_bot_event(bot_name, user_id, "cycle_complete", cycle_data)
+
+    async def publish_error(self, bot_name: str, error_data: Dict[str, Any],
+                            user_id: Optional[int] = None) -> None:
+        await self.publish("error", error_data, user_id, bot_name)
+        await self._append_bot_event(bot_name, user_id, "error", error_data)
+
     async def publish_trade_executed(self, bot_name: str, trade_data: Dict[str, Any],
                                      user_id: Optional[int] = None) -> None:
         await self.publish("trade_executed", trade_data, user_id, bot_name)
+        await self._append_bot_event(bot_name, user_id, "trade_executed", trade_data)
 
     async def publish_signal_generated(self, bot_name: str, signal_data: Dict[str, Any],
                                        user_id: Optional[int] = None) -> None:
         await self.publish("signal_generated", signal_data, user_id, bot_name)
+        await self._append_bot_event(bot_name, user_id, "signal_generated", signal_data)
 
     async def publish_bot_status_changed(self, bot_name: str, status: str,
                                          user_id: Optional[int] = None) -> None:
         await self.publish("bot_status_changed", {"status": status}, user_id, bot_name)
+        await self._append_bot_event(bot_name, user_id, "bot_status_changed", {"status": status})
 
     async def publish_command_response(self, request_id: str, success: bool,
                                        data: Optional[Dict[str, Any]] = None,
@@ -86,3 +99,33 @@ class EventPublisher:
             "data": data,
             "error": error,
         })
+
+    async def publish_account_snapshot(self, bot_name: str, snapshot: Dict[str, Any],
+                                       user_id: Optional[int] = None) -> None:
+        """Store account snapshot in Redis hash for polling by API/dashboard.
+
+        Stored separately from bot status — keyed per bot so the API can
+        aggregate across all bots for a user's total portfolio view.
+        """
+        key = f"bot:{user_id or 0}:{bot_name}:account"
+        try:
+            snapshot["updated_at"] = datetime.now(UTC).isoformat()
+            await self._redis.set(key, json.dumps(snapshot, default=str), ex=300)  # 5min TTL
+        except Exception as e:
+            logger.debug(f"Failed to publish account snapshot for '{bot_name}': {e}")
+
+    async def _append_bot_event(self, bot_name: str, user_id: Optional[int],
+                                event_type: str, data: Dict[str, Any],
+                                max_events: int = 200) -> None:
+        """Append event to bot's Redis event list (capped for polling by UI)."""
+        key = f"bot:{user_id or 0}:{bot_name}:events"
+        entry = {
+            "type": event_type,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "data": data,
+        }
+        try:
+            await self._redis.lpush(key, json.dumps(entry, default=str))
+            await self._redis.ltrim(key, 0, max_events - 1)
+        except Exception as e:
+            logger.debug(f"Failed to append bot event: {e}")

@@ -7,7 +7,7 @@ is defined in the Alembic migrations (shared/alembic/versions/).
 from datetime import datetime, UTC
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, Integer, Numeric, String, Text,
+    Boolean, Column, Date, DateTime, Float, Integer, Numeric, String, Text,
     ForeignKey, UniqueConstraint, func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -185,3 +185,21 @@ class PerformanceMetric(Base):
     profit_factor = Column(Float, nullable=True)
     sharpe_ratio = Column(Float, nullable=True)
     portfolio_value = Column(Numeric(20, 8), nullable=True)
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    bot_name = Column(String(100), nullable=False)
+    snapshot_date = Column(Date, nullable=False)
+    equity = Column(Numeric(20, 8), nullable=False)
+    cash = Column(Numeric(20, 8), nullable=False)
+    broker_type = Column(String(50), nullable=True)
+    currency = Column(String(10), nullable=False, server_default="USD")
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "bot_name", "snapshot_date", name="uq_portfolio_snapshot_daily"),
+    )

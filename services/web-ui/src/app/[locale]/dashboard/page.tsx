@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   getBotStatus, listPositions, listTrades, getPortfolioSummary, getEquityCurve,
+  getAccountSnapshots, getPortfolioHistory,
   type Trade, type Position, type PortfolioSummary, type EquityCurvePoint,
+  type AccountsSummary, type PortfolioHistoryPoint,
 } from "@/lib/api";
 import { Link } from "@/i18n/navigation";
 import { Sparkline } from "@/components/charts/sparkline";
@@ -24,24 +26,30 @@ export default function DashboardPage() {
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityCurvePoint[]>([]);
+  const [accounts, setAccounts] = useState<AccountsSummary | null>(null);
+  const [portfolioHistory, setPortfolioHistory] = useState<PortfolioHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const t = useTranslations("dashboard");
 
   useEffect(() => {
     async function load() {
       try {
-        const [botData, posData, tradeData, portfolioData, curveData] = await Promise.all([
+        const [botData, posData, tradeData, portfolioData, curveData, accountData, historyData] = await Promise.all([
           getBotStatus().catch(() => ({})),
           listPositions(true).catch(() => []),
           listTrades({ limit: 10 }).catch(() => []),
           getPortfolioSummary().catch(() => null),
           getEquityCurve(90).catch(() => []),
+          getAccountSnapshots().catch(() => null),
+          getPortfolioHistory(90).catch(() => []),
         ]);
         setBots(botData);
         setPositions(posData);
         setRecentTrades(tradeData);
         setPortfolio(portfolioData);
         setEquityCurve(curveData);
+        setAccounts(accountData);
+        setPortfolioHistory(historyData);
       } finally {
         setLoading(false);
       }
@@ -57,8 +65,11 @@ export default function DashboardPage() {
   const winningCount = closedTrades.filter((tr) => tr.is_winning_trade).length;
   const winRate = closedTrades.length > 0 ? (winningCount / closedTrades.length) * 100 : 0;
 
+  // Use real broker equity when available, fall back to DB-tracked positions
+  const hasLiveAccounts = accounts && accounts.total_equity > 0;
+  const portfolioValue = hasLiveAccounts ? accounts.total_equity : (portfolio?.total_invested ?? 0);
   const unrealizedPnl = portfolio?.total_unrealized_pnl ?? 0;
-  const totalInvested = portfolio?.total_invested ?? 0;
+  const availableCash = hasLiveAccounts ? accounts.total_cash : 0;
 
   if (loading) {
     return (
@@ -89,11 +100,13 @@ export default function DashboardPage() {
           icon={DollarSign}
           iconBg="bg-primary/10"
           iconColor="text-primary"
-          value={`$${totalInvested.toFixed(2)}`}
+          value={`$${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           sub={
-            unrealizedPnl !== 0
-              ? { value: `${unrealizedPnl >= 0 ? "+" : ""}$${unrealizedPnl.toFixed(2)}`, positive: unrealizedPnl >= 0 }
-              : undefined
+            hasLiveAccounts
+              ? { value: `$${availableCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t("availableCash")}`, positive: true }
+              : unrealizedPnl !== 0
+                ? { value: `${unrealizedPnl >= 0 ? "+" : ""}$${unrealizedPnl.toFixed(2)}`, positive: unrealizedPnl >= 0 }
+                : undefined
           }
         />
         <SummaryCard
@@ -168,7 +181,45 @@ export default function DashboardPage() {
             <h2 className="font-semibold">{t("allocation")}</h2>
           </div>
           <div className="p-5 space-y-5">
-            {portfolio && portfolio.allocations.length > 0 ? (
+            {/* Live broker positions (preferred) */}
+            {hasLiveAccounts && accounts.positions.length > 0 ? (
+              <>
+                <AllocationBar
+                  items={accounts.positions.map((p) => ({ label: p.symbol, value: p.market_value }))}
+                />
+                <div className="space-y-2">
+                  {accounts.positions.slice(0, 8).map((p) => (
+                    <div key={`${p.bot_name}-${p.symbol}`} className="flex items-center justify-between text-sm">
+                      <div className="min-w-0">
+                        <span className="font-medium">{p.symbol}</span>
+                        <span className="text-[10px] text-muted-foreground ml-1.5">{p.qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-muted-foreground">${p.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        {p.unrealized_pnl !== 0 && (
+                          <span className={`ml-2 text-xs ${p.unrealized_pnl >= 0 ? "text-primary" : "text-destructive"}`}>
+                            {p.unrealized_pnl >= 0 ? "+" : ""}${p.unrealized_pnl.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Per-account breakdown */}
+                {accounts.accounts.length > 1 && (
+                  <div className="pt-3 border-t border-border/20 space-y-1.5">
+                    <p className="text-xs text-muted-foreground font-medium">{t("byAccount")}</p>
+                    {accounts.accounts.map((acc) => (
+                      <div key={acc.bot_name} className="flex justify-between text-xs text-muted-foreground">
+                        <span>{acc.bot_name} <span className="opacity-60">({acc.broker_type})</span></span>
+                        <span>${acc.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : portfolio && portfolio.allocations.length > 0 ? (
+              /* Fallback: DB-tracked positions */
               <>
                 <AllocationBar
                   items={portfolio.allocations.map((a) => ({ label: a.symbol, value: a.value }))}
@@ -208,6 +259,27 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Portfolio Value Over Time (from daily snapshots) */}
+      {portfolioHistory.length >= 2 && (
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/30 flex items-center justify-between">
+            <h2 className="font-semibold">{t("portfolioHistory")}</h2>
+            <span className="text-sm font-medium text-muted-foreground">
+              ${portfolioHistory[portfolioHistory.length - 1]?.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div className="p-5">
+            <Sparkline
+              data={portfolioHistory.map((p) => p.equity)}
+              width={800}
+              height={80}
+              className="w-full"
+              color="oklch(0.7 0.15 250)"
+            />
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="glass rounded-2xl overflow-hidden">

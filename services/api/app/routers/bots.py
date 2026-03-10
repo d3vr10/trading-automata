@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import BotConfiguration, BrokerCredential, User
-from app.services import bot_service
+from app.services import bot_service, trade_service
 from app.services.credential_service import decrypt_credential
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
@@ -232,22 +232,87 @@ async def delete_bot(
     bot_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
 ):
     """Delete a bot configuration."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    # Clean up Redis status entry
+    status_key = f"bot:{current_user.id}:{bot.name}"
+    await redis_client.hdel("engine:status", status_key)
+    events_key = f"bot:{current_user.id}:{bot.name}:events"
+    await redis_client.delete(events_key)
+    account_key = f"bot:{current_user.id}:{bot.name}:account"
+    await redis_client.delete(account_key)
     await db.delete(bot)
     await db.commit()
 
 
 # ---- Lifecycle commands (Redis) ----
 
-@router.get("/status/all")
-async def get_all_bot_status(
+@router.get("/portfolio/history")
+async def get_portfolio_history(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = 90,
+):
+    """Get daily portfolio value history for charting."""
+    return await bot_service.get_portfolio_history(db, current_user.id, days)
+
+
+@router.get("/accounts")
+async def get_account_snapshots(
     current_user: Annotated[User, Depends(get_current_user)],
     redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
 ):
-    """Get runtime status of all bots from Redis."""
-    return await bot_service.get_bot_statuses(redis_client, current_user.id)
+    """Get aggregated account data from all running bots.
+
+    Returns per-bot account snapshots (equity, cash, positions with live
+    prices) plus a unified total — similar to 3Commas portfolio view.
+    """
+    return await bot_service.get_account_snapshots(redis_client, current_user.id)
+
+
+@router.get("/status/all")
+async def get_all_bot_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Get runtime status of all bots from Redis, reconciled with DB state.
+
+    If a bot is marked is_active=False in the DB but Redis still says
+    running=True, we correct the stale Redis entry. This prevents ghost
+    bots from appearing as running after failed starts or missed stop events.
+    """
+    statuses = await bot_service.get_bot_statuses(redis_client, current_user.id)
+
+    # Cross-reference with DB to fix stale entries
+    result = await db.execute(
+        select(BotConfiguration.name, BotConfiguration.is_active)
+        .where(BotConfiguration.user_id == current_user.id)
+    )
+    db_bots = {name: is_active for name, is_active in result.all()}
+
+    for bot_name, status in list(statuses.items()):
+        if bot_name not in db_bots:
+            # Bot was deleted — clean up stale Redis entry
+            key = f"bot:{current_user.id}:{bot_name}"
+            await redis_client.hdel("engine:status", key)
+            del statuses[bot_name]
+        elif not db_bots[bot_name] and status.get("running"):
+            # DB says inactive but Redis says running — stale entry
+            status["running"] = False
+            status["paused"] = False
+            status["stale"] = True
+
+    # Enrich with per-account broker connection health
+    # A fresh account snapshot (TTL 5min) indicates the broker is reachable
+    for bot_name, status in statuses.items():
+        account_key = f"bot:{current_user.id}:{bot_name}:account"
+        has_snapshot = await redis_client.exists(account_key)
+        status["broker_connected"] = bool(has_snapshot) if status.get("running") else None
+
+    return statuses
 
 
 @router.get("/engine/health")
@@ -257,6 +322,44 @@ async def engine_health(
 ):
     """Check if the trading engine is online."""
     return await bot_service.get_engine_health(redis_client)
+
+
+@router.get("/{bot_id}/stats")
+async def get_bot_stats(
+    bot_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Get performance stats for a specific bot."""
+    bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    stats = await trade_service.get_bot_stats(db, current_user.id, bot.name)
+    equity_curve = await trade_service.get_bot_equity_curve(db, current_user.id, bot.name)
+
+    # Merge live account data from Redis
+    account_key = f"bot:{current_user.id}:{bot.name}:account"
+    raw = await redis_client.get(account_key)
+    if raw:
+        import json
+        snapshot = json.loads(raw)
+        stats["equity"] = snapshot.get("equity")
+        stats["cash"] = snapshot.get("cash")
+
+    stats["equity_curve"] = equity_curve
+    return stats
+
+
+@router.get("/{bot_id}/events")
+async def get_bot_events(
+    bot_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+    limit: int = 50,
+):
+    """Get recent activity events for a bot."""
+    bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    return await bot_service.get_bot_events(redis_client, current_user.id, bot.name, limit)
 
 
 @router.post("/{bot_id}/start", response_model=BotCommandResponse)

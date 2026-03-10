@@ -401,7 +401,7 @@ class BotOrchestrator:
                     take_profit_pct=config.get("take_profit_pct", 6.0),
                     max_position_size=config.get("max_position_size", 0.1),
                 ),
-                strategy_config=config.get("strategy_id", ""),
+                strategy_config="config/strategies.yaml",
             )
 
             # Create bot-scoped Telegram if available
@@ -417,6 +417,8 @@ class BotOrchestrator:
                 event_logger=self.event_logger,
                 telegram_bot=bot_telegram,
                 session_factory=self.db.session_factory,
+                event_publisher=self._event_publisher,
+                user_id=user_id,
             )
 
             if await bot_instance.setup():
@@ -431,11 +433,16 @@ class BotOrchestrator:
                     await self._event_publisher.publish_bot_status_changed(
                         bot_name, "running", user_id=user_id,
                     )
+                    await self._event_publisher.update_bot_status(
+                        bot_name, {"running": True, "paused": False, "starting": False,
+                                   "error": None},
+                        user_id=user_id,
+                    )
 
                 logger.info(f"Bot '{bot_name}' started dynamically via API")
                 return {"bot_name": bot_name, "status": "running"}
             else:
-                error_msg = f"Bot '{bot_name}' setup failed"
+                error_msg = bot_instance.setup_error or f"Bot '{bot_name}' setup failed"
                 logger.error(error_msg)
                 if self._event_publisher:
                     await self._event_publisher.publish_bot_status_changed(
@@ -453,45 +460,81 @@ class BotOrchestrator:
             logger.error(f"Failed to start bot '{bot_name}': {error_msg}", exc_info=True)
             if self._event_publisher:
                 await self._event_publisher.publish_bot_status_changed(
-                    bot_name, "failed", user_id=user_id, error=error_msg,
+                    bot_name, "failed", user_id=user_id,
                 )
                 await self._event_publisher.update_bot_status(
-                    bot_name, user_id=user_id,
-                    status_data={"running": False, "paused": False, "starting": False,
-                                 "error": error_msg},
+                    bot_name, {"running": False, "paused": False, "starting": False,
+                               "error": error_msg},
+                    user_id=user_id,
                 )
             raise
 
     async def _handle_pause_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name", "")
+        user_id = data.get("user_id")
         if self.pause_bot(bot_name):
             if self._event_publisher:
+                await self._event_publisher.update_bot_status(
+                    bot_name, {"running": True, "paused": True, "error": None},
+                    user_id=user_id,
+                )
                 await self._event_publisher.publish_bot_status_changed(
-                    bot_name, "paused", user_id=data.get("user_id"),
+                    bot_name, "paused", user_id=user_id,
                 )
             return {"bot_name": bot_name, "status": "paused"}
-        raise ValueError(f"Bot '{bot_name}' not found")
+        # Bot not in registry — update status so UI stops polling
+        logger.warning(f"Pause requested for unknown bot '{bot_name}', clearing status")
+        if self._event_publisher:
+            await self._event_publisher.update_bot_status(
+                bot_name, {"running": False, "paused": False, "error": None},
+                user_id=user_id,
+            )
+        return {"bot_name": bot_name, "status": "not_found"}
 
     async def _handle_resume_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name", "")
+        user_id = data.get("user_id")
         if self.resume_bot(bot_name):
             if self._event_publisher:
+                await self._event_publisher.update_bot_status(
+                    bot_name, {"running": True, "paused": False, "error": None},
+                    user_id=user_id,
+                )
                 await self._event_publisher.publish_bot_status_changed(
-                    bot_name, "running", user_id=data.get("user_id"),
+                    bot_name, "running", user_id=user_id,
                 )
             return {"bot_name": bot_name, "status": "running"}
-        raise ValueError(f"Bot '{bot_name}' not found")
+        logger.warning(f"Resume requested for unknown bot '{bot_name}', clearing status")
+        if self._event_publisher:
+            await self._event_publisher.update_bot_status(
+                bot_name, {"running": False, "paused": False, "error": None},
+                user_id=user_id,
+            )
+        return {"bot_name": bot_name, "status": "not_found"}
 
     async def _handle_stop_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name", "")
+        user_id = data.get("user_id")
         if bot_name in self.bot_registry:
             self.bot_registry[bot_name].stop()
             if self._event_publisher:
+                await self._event_publisher.update_bot_status(
+                    bot_name, {"running": False, "paused": False, "error": None},
+                    user_id=user_id,
+                )
                 await self._event_publisher.publish_bot_status_changed(
-                    bot_name, "stopped", user_id=data.get("user_id"),
+                    bot_name, "stopped", user_id=user_id,
                 )
             return {"bot_name": bot_name, "status": "stopped"}
-        raise ValueError(f"Bot '{bot_name}' not found")
+        # Bot not in engine registry (never started or already stopped).
+        # Update Redis status so the UI polling resolves immediately.
+        logger.warning(f"Stop requested for unknown bot '{bot_name}', clearing status")
+        if self._event_publisher:
+            await self._event_publisher.update_bot_status(
+                bot_name, {"running": False, "paused": False, "error": None},
+                user_id=user_id,
+            )
+        return {"bot_name": bot_name, "status": "already_stopped"}
 
     async def _handle_get_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name")

@@ -55,9 +55,15 @@ async def lifespan(app: FastAPI):
 
     # Start Redis event listener for WebSocket forwarding
     redis_listener_task = None
+    snapshot_task = None
     if redis_client:
         redis_listener_task = asyncio.create_task(ws.redis_event_listener(redis_client))
         logger.info("Redis→WebSocket event listener started")
+        from app.services.bot_service import portfolio_snapshot_loop
+        snapshot_task = asyncio.create_task(
+            portfolio_snapshot_loop(redis_client, async_session, interval_seconds=3600)
+        )
+        logger.info("Portfolio snapshot persistence task started (hourly)")
 
     # Bootstrap root user
     async with async_session() as session:
@@ -74,12 +80,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("API service shutting down...")
-    if redis_listener_task:
-        redis_listener_task.cancel()
-        try:
-            await redis_listener_task
-        except asyncio.CancelledError:
-            pass
+    for task in [redis_listener_task, snapshot_task]:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     if redis_client:
         await redis_client.close()
     await engine.dispose()

@@ -1,9 +1,14 @@
 """Bot lifecycle management via Redis pub/sub."""
 
+import asyncio
 import json
+import logging
 import uuid
+from datetime import date
 
 import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
 
 COMMANDS_CHANNEL = "engine:commands"
 STATUS_HASH = "engine:status"
@@ -71,3 +76,163 @@ async def get_bot_statuses(
             bot_name = key[len(prefix):]
             user_bots[bot_name] = json.loads(value)
     return user_bots
+
+
+async def get_account_snapshots(
+    redis_client: aioredis.Redis,
+    user_id: int,
+) -> dict:
+    """Get account snapshots for all bots belonging to a user.
+
+    Returns per-bot account data + an aggregated total across all accounts.
+    This is how platforms like 3Commas show portfolio value: per-account
+    breakdown + unified total in display currency (USD).
+    """
+    # Scan for account snapshot keys for this user
+    pattern = f"bot:{user_id}:*:account"
+    accounts = []
+    total_equity = 0.0
+    total_cash = 0.0
+    all_positions = []
+
+    async for key in redis_client.scan_iter(match=pattern):
+        raw = await redis_client.get(key)
+        if not raw:
+            continue
+        snapshot = json.loads(raw)
+        # Extract bot name from key: bot:{user_id}:{bot_name}:account
+        parts = key.split(":")
+        bot_name = ":".join(parts[2:-1])  # Handle bot names with colons
+        snapshot["bot_name"] = bot_name
+        accounts.append(snapshot)
+
+        total_equity += snapshot.get("equity", 0)
+        total_cash += snapshot.get("cash", 0)
+        for pos in snapshot.get("positions", []):
+            pos["bot_name"] = bot_name
+            all_positions.append(pos)
+
+    return {
+        "total_equity": total_equity,
+        "total_cash": total_cash,
+        "currency": "USD",
+        "accounts": accounts,
+        "positions": all_positions,
+    }
+
+
+async def get_bot_events(
+    redis_client: aioredis.Redis,
+    user_id: int,
+    bot_name: str,
+    limit: int = 50,
+) -> list:
+    """Get recent events for a bot from Redis list."""
+    key = f"bot:{user_id}:{bot_name}:events"
+    raw_events = await redis_client.lrange(key, 0, limit - 1)
+    return [json.loads(e) for e in raw_events]
+
+
+async def persist_portfolio_snapshots(
+    redis_client: aioredis.Redis,
+    session_factory,
+) -> int:
+    """Scan all account snapshots from Redis and persist today's values to DB.
+
+    Uses upsert (ON CONFLICT UPDATE) so running multiple times per day
+    just updates the same row with the latest values.
+    Returns number of snapshots persisted.
+    """
+    from app.models import PortfolioSnapshot, User
+
+    today = date.today()
+    count = 0
+
+    # Scan all account snapshot keys: bot:{user_id}:{bot_name}:account
+    async for key in redis_client.scan_iter(match="bot:*:account"):
+        raw = await redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            snapshot = json.loads(raw)
+            parts = key.split(":")
+            # key format: bot:{user_id}:{bot_name}:account
+            user_id = int(parts[1])
+            bot_name = ":".join(parts[2:-1])
+
+            async with session_factory() as session:
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                stmt = pg_insert(PortfolioSnapshot).values(
+                    user_id=user_id,
+                    bot_name=bot_name,
+                    snapshot_date=today,
+                    equity=snapshot.get("equity", 0),
+                    cash=snapshot.get("cash", 0),
+                    broker_type=snapshot.get("broker_type"),
+                    currency=snapshot.get("currency", "USD"),
+                ).on_conflict_do_update(
+                    constraint="uq_portfolio_snapshot_daily",
+                    set_={
+                        "equity": snapshot.get("equity", 0),
+                        "cash": snapshot.get("cash", 0),
+                    },
+                )
+                await session.execute(stmt)
+                await session.commit()
+                count += 1
+        except Exception as e:
+            logger.debug(f"Failed to persist snapshot for key '{key}': {e}")
+
+    return count
+
+
+async def portfolio_snapshot_loop(
+    redis_client: aioredis.Redis,
+    session_factory,
+    interval_seconds: int = 3600,
+) -> None:
+    """Background task: persist portfolio snapshots every hour."""
+    try:
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                count = await persist_portfolio_snapshots(redis_client, session_factory)
+                if count:
+                    logger.debug(f"Persisted {count} portfolio snapshot(s)")
+            except Exception as e:
+                logger.warning(f"Portfolio snapshot persistence failed: {e}")
+    except asyncio.CancelledError:
+        pass
+
+
+async def get_portfolio_history(
+    db,
+    user_id: int,
+    days: int = 90,
+) -> list[dict]:
+    """Get daily portfolio value history from DB snapshots.
+
+    Returns aggregated total equity per day across all bots.
+    """
+    from sqlalchemy import func, cast, Date as SaDate
+    from app.models import PortfolioSnapshot
+
+    result = await db.execute(
+        select(
+            PortfolioSnapshot.snapshot_date,
+            func.sum(PortfolioSnapshot.equity).label("total_equity"),
+            func.sum(PortfolioSnapshot.cash).label("total_cash"),
+        )
+        .where(PortfolioSnapshot.user_id == user_id)
+        .group_by(PortfolioSnapshot.snapshot_date)
+        .order_by(PortfolioSnapshot.snapshot_date)
+        .limit(days)
+    )
+    return [
+        {
+            "date": str(row.snapshot_date),
+            "equity": float(row.total_equity or 0),
+            "cash": float(row.total_cash or 0),
+        }
+        for row in result.all()
+    ]

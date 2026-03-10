@@ -17,8 +17,11 @@ import { toast } from "sonner";
 import { Play, Pause, Square, Plus, Trash2, Loader2, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import { BotCardSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useWebSocket, type WsEvent } from "@/hooks/use-websocket";
 
-const START_TIMEOUT_MS = 30_000;
+const ACTION_TIMEOUT_MS = 30_000;
+
+type PendingAction = "start" | "pause" | "resume" | "stop";
 
 export default function BotsPage() {
   const t = useTranslations("bots");
@@ -28,10 +31,11 @@ export default function BotsPage() {
   const [deleteTarget, setDeleteTarget] = useState<BotConfig | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [engineOnline, setEngineOnline] = useState<boolean | null>(null);
-  // Track bots in "starting" state with their timeout handles
-  const [startingBots, setStartingBots] = useState<Record<number, boolean>>({});
+  // Track pending actions per bot: { botId: "start" | "pause" | "resume" | "stop" }
+  const [pendingActions, setPendingActions] = useState<Record<number, PendingAction>>({});
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRefs = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const { on } = useWebSocket();
 
   const loadStatus = useCallback(async () => {
     try {
@@ -66,64 +70,95 @@ export default function BotsPage() {
     };
   }, [load]);
 
-  // Start/stop polling when there are starting bots
+  // Poll when there are pending actions
   useEffect(() => {
-    const hasStarting = Object.values(startingBots).some(Boolean);
-    if (hasStarting && !pollingRef.current) {
+    const hasPending = Object.keys(pendingActions).length > 0;
+    if (hasPending && !pollingRef.current) {
       pollingRef.current = setInterval(async () => {
         const status = await loadStatus();
-        // Check if any starting bot has transitioned
-        setStartingBots((prev) => {
+        setPendingActions((prev) => {
           const next = { ...prev };
           let changed = false;
-          for (const [idStr, isStarting] of Object.entries(prev)) {
-            if (!isStarting) continue;
+          for (const [idStr, action] of Object.entries(prev)) {
             const botId = Number(idStr);
             const bot = bots.find((b) => b.id === botId);
             if (!bot) continue;
             const rs = (status as Record<string, any>)[bot.name];
-            if (rs?.running || rs?.error) {
-              next[botId] = false;
+
+            let resolved = false;
+            if (action === "start") {
+              if (rs?.running) resolved = true;
+              if (rs?.error) {
+                resolved = true;
+                toast.error(t("startFailed", { error: rs.error }));
+              }
+            } else if (action === "pause") {
+              resolved = rs?.paused === true || !rs?.running;
+            } else if (action === "resume") {
+              resolved = rs?.running === true && rs?.paused === false;
+            } else if (action === "stop") {
+              resolved = !rs?.running || rs === undefined;
+            }
+
+            if (resolved) {
+              delete next[botId];
               changed = true;
               if (timeoutRefs.current[botId]) {
                 clearTimeout(timeoutRefs.current[botId]);
                 delete timeoutRefs.current[botId];
               }
-              if (rs?.error) {
-                toast.error(t("startFailed", { error: rs.error }));
-              }
             }
           }
           return changed ? next : prev;
         });
-      }, 2000);
-    } else if (!hasStarting && pollingRef.current) {
+      }, 1000);
+    } else if (!hasPending && pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-  }, [startingBots, bots, loadStatus, t]);
+  }, [pendingActions, bots, loadStatus, t]);
 
-  async function handleAction(bot: BotConfig, action: "start" | "pause" | "resume" | "stop") {
+  // Real-time status via WebSocket — resolves pending actions instantly
+  useEffect(() => {
+    const cleanup = on("bot_status_changed", () => {
+      // Refresh all statuses on any status change event
+      loadStatus();
+    });
+    return cleanup;
+  }, [on, loadStatus]);
+
+  function setPending(botId: number, action: PendingAction) {
+    setPendingActions((prev) => ({ ...prev, [botId]: action }));
+    timeoutRefs.current[botId] = setTimeout(() => {
+      setPendingActions((prev) => {
+        if (!(botId in prev)) return prev;
+        toast.error(t("startTimeout"));
+        const next = { ...prev };
+        delete next[botId];
+        return next;
+      });
+    }, ACTION_TIMEOUT_MS);
+  }
+
+  async function handleAction(bot: BotConfig, action: PendingAction) {
+    // Optimistic UI: immediately show expected state
+    setPending(bot.id, action);
     try {
-      if (action === "start") {
-        await startBot(bot.id);
-        // Set starting state with timeout
-        setStartingBots((prev) => ({ ...prev, [bot.id]: true }));
-        timeoutRefs.current[bot.id] = setTimeout(() => {
-          setStartingBots((prev) => {
-            if (!prev[bot.id]) return prev;
-            toast.error(t("startTimeout"));
-            return { ...prev, [bot.id]: false };
-          });
-        }, START_TIMEOUT_MS);
-      } else {
-        if (action === "pause") await pauseBot(bot.id);
-        else if (action === "resume") await resumeBot(bot.id);
-        else await stopBot(bot.id);
-        toast.success(t("actionSent", { botName: bot.name, action }));
-        setTimeout(load, 1000);
-      }
+      if (action === "start") await startBot(bot.id);
+      else if (action === "pause") await pauseBot(bot.id);
+      else if (action === "resume") await resumeBot(bot.id);
+      else await stopBot(bot.id);
     } catch (err) {
+      // Revert optimistic update on failure
+      setPendingActions((prev) => {
+        const next = { ...prev };
+        delete next[bot.id];
+        return next;
+      });
+      if (timeoutRefs.current[bot.id]) {
+        clearTimeout(timeoutRefs.current[bot.id]);
+        delete timeoutRefs.current[bot.id];
+      }
       toast.error(err instanceof Error ? err.message : t("actionFailed", { action }));
     }
   }
@@ -198,11 +233,42 @@ export default function BotsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {bots.map((bot) => {
             const status = runtimeStatus[bot.name] as any;
-            const isStarting = !!startingBots[bot.id];
+            const pending = pendingActions[bot.id];
             const isRunning = status?.running && !status?.paused;
             const isPaused = status?.paused;
-            const isStopped = !status?.running && !isStarting;
+            const isStopped = !status?.running && !pending;
             const hasError = status?.error;
+
+            // Determine badge
+            let badge: React.ReactNode;
+            if (pending) {
+              const label = pending === "start" ? t("statusStarting")
+                : pending === "stop" ? `${t("stop")}...`
+                : pending === "pause" ? `${t("pause")}...`
+                : `${t("resume")}...`;
+              badge = (
+                <Badge variant="secondary" className="bg-blue-500/20 text-blue-300 border-blue-500/30">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  {label}
+                </Badge>
+              );
+            } else if (hasError) {
+              badge = (
+                <Badge variant="destructive" className="bg-red-500/20 text-red-300 border-red-500/30">
+                  <AlertTriangle className="mr-1 h-3 w-3" />
+                  Error
+                </Badge>
+              );
+            } else {
+              badge = (
+                <Badge
+                  variant={isPaused ? "secondary" : isRunning ? "default" : "destructive"}
+                  className={isRunning ? "bg-primary/20 text-primary border-primary/30" : ""}
+                >
+                  {isPaused ? t("statusPaused") : isRunning ? t("statusRunning") : t("statusStopped")}
+                </Badge>
+              );
+            }
 
             return (
               <div key={bot.id} className="glass rounded-2xl overflow-hidden">
@@ -213,28 +279,11 @@ export default function BotsPage() {
                   >
                     {bot.name}
                   </Link>
-                  {isStarting ? (
-                    <Badge variant="secondary" className="bg-blue-500/20 text-blue-300 border-blue-500/30">
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      {t("statusStarting")}
-                    </Badge>
-                  ) : hasError ? (
-                    <Badge variant="destructive" className="bg-red-500/20 text-red-300 border-red-500/30">
-                      <AlertTriangle className="mr-1 h-3 w-3" />
-                      Error
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant={isPaused ? "secondary" : isRunning ? "default" : "destructive"}
-                      className={isRunning ? "bg-primary/20 text-primary border-primary/30" : ""}
-                    >
-                      {isPaused ? t("statusPaused") : isRunning ? t("statusRunning") : t("statusStopped")}
-                    </Badge>
-                  )}
+                  {badge}
                 </div>
                 <div className="p-5 space-y-4">
                   {/* Error message from engine */}
-                  {hasError && (
+                  {hasError && !pending && (
                     <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-300">
                       {status.error}
                     </div>
@@ -246,7 +295,15 @@ export default function BotsPage() {
                     </div>
                     <div>
                       <span className="text-muted-foreground text-xs">{t("broker")}</span>
-                      <div className="font-medium">{bot.broker_type} / {bot.environment}</div>
+                      <div className="font-medium flex items-center gap-1.5">
+                        {bot.broker_type} / {bot.environment}
+                        {status?.broker_connected === true && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" title="Broker connected" />
+                        )}
+                        {status?.broker_connected === false && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-400" title="Broker disconnected" />
+                        )}
+                      </div>
                     </div>
                     <div>
                       <span className="text-muted-foreground text-xs">{t("allocation")}</span>
@@ -258,40 +315,47 @@ export default function BotsPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {isStarting && (
+                    {pending ? (
                       <Button size="sm" className="rounded-lg" disabled>
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> {t("statusStarting")}
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        {pending === "start" ? t("statusStarting")
+                          : pending === "stop" ? `${t("stop")}...`
+                          : pending === "pause" ? `${t("pause")}...`
+                          : `${t("resume")}...`}
                       </Button>
-                    )}
-                    {isStopped && !isStarting && (
-                      <Button
-                        size="sm"
-                        className="rounded-lg"
-                        disabled={engineOnline === false}
-                        onClick={() => handleAction(bot, "start")}
-                      >
-                        <Play className="mr-1 h-3.5 w-3.5" /> {t("start")}
-                      </Button>
-                    )}
-                    {isRunning && (
-                      <Button size="sm" variant="secondary" className="rounded-lg" onClick={() => handleAction(bot, "pause")}>
-                        <Pause className="mr-1 h-3.5 w-3.5" /> {t("pause")}
-                      </Button>
-                    )}
-                    {isPaused && (
-                      <Button size="sm" className="rounded-lg" onClick={() => handleAction(bot, "resume")}>
-                        <Play className="mr-1 h-3.5 w-3.5" /> {t("resume")}
-                      </Button>
-                    )}
-                    {status?.running && (
-                      <Button size="sm" variant="destructive" className="rounded-lg" onClick={() => handleAction(bot, "stop")}>
-                        <Square className="mr-1 h-3.5 w-3.5" /> {t("stop")}
-                      </Button>
-                    )}
-                    {isStopped && !isStarting && (
-                      <Button size="sm" variant="ghost" className="rounded-lg hover:text-destructive ml-auto" onClick={() => setDeleteTarget(bot)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    ) : (
+                      <>
+                        {isStopped && (
+                          <Button
+                            size="sm"
+                            className="rounded-lg"
+                            disabled={engineOnline === false}
+                            onClick={() => handleAction(bot, "start")}
+                          >
+                            <Play className="mr-1 h-3.5 w-3.5" /> {t("start")}
+                          </Button>
+                        )}
+                        {isRunning && (
+                          <Button size="sm" variant="secondary" className="rounded-lg" onClick={() => handleAction(bot, "pause")}>
+                            <Pause className="mr-1 h-3.5 w-3.5" /> {t("pause")}
+                          </Button>
+                        )}
+                        {isPaused && (
+                          <Button size="sm" className="rounded-lg" onClick={() => handleAction(bot, "resume")}>
+                            <Play className="mr-1 h-3.5 w-3.5" /> {t("resume")}
+                          </Button>
+                        )}
+                        {status?.running && (
+                          <Button size="sm" variant="destructive" className="rounded-lg" onClick={() => handleAction(bot, "stop")}>
+                            <Square className="mr-1 h-3.5 w-3.5" /> {t("stop")}
+                          </Button>
+                        )}
+                        {isStopped && (
+                          <Button size="sm" variant="ghost" className="rounded-lg hover:text-destructive ml-auto" onClick={() => setDeleteTarget(bot)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

@@ -210,14 +210,6 @@ class OrchestratorConfig(BaseModel):
 
     @field_validator('bots')
     @classmethod
-    def validate_bots(cls, v):
-        """Ensure at least one bot is defined."""
-        if not v:
-            raise ValueError("At least one bot configuration must be defined")
-        return v
-
-    @field_validator('bots')
-    @classmethod
     def validate_unique_names(cls, v):
         """Ensure all bot names are unique."""
         names = [bot.name for bot in v]

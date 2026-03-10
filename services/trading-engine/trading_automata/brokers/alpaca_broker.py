@@ -395,6 +395,43 @@ class AlpacaBroker(IBroker):
             logger.error(f"Failed to get orders: {e}")
             raise
 
+    def get_account_snapshot(self) -> Dict[str, Any]:
+        """Get normalized account snapshot.
+
+        Alpaca is USD-only, so all values are already in USD.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            account = self.client.get_account()
+            positions = self.client.get_all_positions()
+
+            pos_list = []
+            for pos in positions:
+                avg_price = getattr(pos, 'avg_fill_price', None) or getattr(pos, 'avg_entry_price', 0)
+                pos_list.append({
+                    'symbol': pos.symbol,
+                    'qty': float(pos.qty),
+                    'avg_entry_price': float(avg_price) if avg_price else 0,
+                    'current_price': float(pos.current_price),
+                    'market_value': float(pos.market_value),
+                    'unrealized_pnl': float(pos.unrealized_pl),
+                    'unrealized_pnl_pct': float(pos.unrealized_plpc) * 100,
+                    'currency': 'USD',
+                })
+
+            return {
+                'broker_type': 'alpaca',
+                'currency': 'USD',
+                'equity': float(account.equity),
+                'cash': float(account.cash),
+                'positions': pos_list,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get account snapshot: {e}")
+            raise
+
     def get_environment(self) -> Environment:
         """Get current trading environment.
 

@@ -123,7 +123,7 @@ async def redis_event_listener(redis_client) -> None:
             if message and message["type"] == "message":
                 try:
                     event_data = json.loads(message["data"])
-                    event_type = event_data.get("event_type", "unknown")
+                    event_type = event_data.get("event", "unknown")
                     ws_messages_forwarded_total.labels(event_type=event_type).inc()
                     await broadcast_event(event_data)
                 except (json.JSONDecodeError, Exception) as e:

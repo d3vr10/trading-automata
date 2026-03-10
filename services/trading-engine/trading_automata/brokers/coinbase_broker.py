@@ -479,6 +479,97 @@ class CoinbaseBroker(IBroker):
             logger.error(f"Failed to get orders: {e}")
             raise
 
+    def get_account_snapshot(self) -> Dict[str, Any]:
+        """Get normalized account snapshot.
+
+        Coinbase holds multiple crypto currencies. We fetch spot prices
+        from Coinbase's own API to convert everything to USD — the same
+        approach 3Commas and Cryptohopper use.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to broker")
+
+        try:
+            accounts = self.client.get_accounts()
+
+            total_equity = Decimal('0')
+            total_cash = Decimal('0')
+            positions = []
+            stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
+
+            for account in accounts:
+                currency = account.get('currency', '')
+                available = Decimal(str(
+                    account.get('available_balance', {}).get('value', '0')
+                ))
+                hold = Decimal(str(
+                    account.get('hold', {}).get('value', '0')
+                ))
+                total_balance = available + hold
+
+                if total_balance <= 0:
+                    continue
+
+                if currency in stablecoins:
+                    # Stablecoins / fiat — already USD-equivalent
+                    usd_value = float(total_balance)
+                    total_cash += total_balance
+                    total_equity += total_balance
+                else:
+                    # Crypto — fetch spot price from Coinbase
+                    usd_price = self._get_spot_price(currency)
+                    usd_value = float(total_balance) * usd_price
+                    total_equity += Decimal(str(usd_value))
+
+                    if usd_price > 0:
+                        positions.append({
+                            'symbol': currency,
+                            'qty': float(total_balance),
+                            'avg_entry_price': 0.0,  # Coinbase doesn't provide cost basis via API
+                            'current_price': usd_price,
+                            'market_value': usd_value,
+                            'unrealized_pnl': 0.0,  # No cost basis available
+                            'unrealized_pnl_pct': 0.0,
+                            'currency': currency,
+                        })
+
+            return {
+                'broker_type': 'coinbase',
+                'currency': 'USD',
+                'equity': float(total_equity),
+                'cash': float(total_cash),
+                'positions': positions,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get account snapshot: {e}")
+            raise
+
+    def _get_spot_price(self, currency: str) -> float:
+        """Get current USD spot price for a crypto currency.
+
+        Uses Coinbase's product ticker endpoint.
+
+        Args:
+            currency: Crypto symbol (e.g. 'BTC', 'ETH')
+
+        Returns:
+            USD price as float, or 0.0 if unavailable.
+        """
+        try:
+            product_id = f"{currency}-USD"
+            ticker = self.client.get_product(product_id)
+            return float(ticker.get('price', 0))
+        except Exception:
+            # Some obscure tokens may not have a USD pair
+            try:
+                # Try via USDC pair as fallback
+                product_id = f"{currency}-USDC"
+                ticker = self.client.get_product(product_id)
+                return float(ticker.get('price', 0))
+            except Exception:
+                logger.debug(f"No USD price available for {currency}")
+                return 0.0
+
     def get_environment(self) -> Environment:
         """Get current trading environment.
 

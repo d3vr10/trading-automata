@@ -161,6 +161,32 @@ class IBroker(ABC):
         pass
 
     @abstractmethod
+    def get_account_snapshot(self) -> Dict[str, Any]:
+        """Get a normalized account snapshot for dashboard display.
+
+        Returns a unified format across all brokers with currency-aware values.
+        Platforms like 3Commas/Cryptohopper use this pattern: each broker
+        reports in its native currency, and the UI normalizes to a display currency.
+
+        Returns:
+            Dictionary containing:
+            - broker_type: str ("alpaca" or "coinbase")
+            - currency: str (base currency, e.g. "USD")
+            - equity: float (total account value in base currency)
+            - cash: float (available cash/buying power)
+            - positions: list of dicts, each with:
+                - symbol: str
+                - qty: float
+                - avg_entry_price: float
+                - current_price: float
+                - market_value: float (in base currency, e.g. USD)
+                - unrealized_pnl: float (in base currency)
+                - unrealized_pnl_pct: float
+                - currency: str (native currency of the asset)
+        """
+        pass
+
+    @abstractmethod
     def get_environment(self) -> Environment:
         """Get the current trading environment.
 

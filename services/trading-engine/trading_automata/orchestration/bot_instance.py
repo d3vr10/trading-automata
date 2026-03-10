@@ -33,6 +33,7 @@ from trading_automata.metrics import (
     engine_broker_errors_total,
     engine_trades_executed_total,
 )
+from trading_automata.commands.publisher import EventPublisher
 from trading_automata.utils.exceptions import TradingBotError
 from trading_automata.utils.strategy_warmer import warm_up_all_strategies
 
@@ -56,6 +57,8 @@ class BotInstance:
         event_logger: EventLogger,
         telegram_bot: Optional[BotScopedTelegram],
         session_factory,
+        event_publisher: Optional[EventPublisher] = None,
+        user_id: Optional[int] = None,
     ):
         """Initialize bot instance.
 
@@ -67,9 +70,13 @@ class BotInstance:
             event_logger: Shared EventLogger
             telegram_bot: BotScopedTelegram (or None if Telegram disabled)
             session_factory: async_sessionmaker for DB sessions
+            event_publisher: Optional Redis event publisher for UI activity feed
+            user_id: Owner user ID (for event scoping)
         """
         self.config = config
         self.bot_name = config.name
+        self._event_publisher = event_publisher
+        self._user_id = user_id
 
         # Create logger adapter with bot name context
         self.logger = BotLoggerAdapter(_base_logger, {'bot_name': self.bot_name})
@@ -119,8 +126,10 @@ class BotInstance:
         and loads strategies from config.
 
         Returns:
-            True if setup successful, False otherwise
+            True if setup successful, False otherwise.
+            On failure, self.setup_error contains a user-facing reason.
         """
+        self.setup_error: str | None = None
         try:
             self.logger.info(f"Setting up bot components...")
 
@@ -143,7 +152,8 @@ class BotInstance:
             )
 
             if not self.broker.connect():
-                self.logger.error(f"Failed to connect to broker")
+                self.setup_error = f"Failed to connect to {self.config.broker.type} broker ({self.config.broker.environment}). Check your API credentials."
+                self.logger.error(self.setup_error)
                 return False
 
             # Create data provider
@@ -158,7 +168,8 @@ class BotInstance:
 
             # Connect data provider
             if not self.data_provider.connect():
-                self.logger.error(f"Failed to connect to data provider")
+                self.setup_error = "Failed to connect to market data provider. Check your API credentials."
+                self.logger.error(self.setup_error)
                 return False
             self.logger.info(f"Connected to data provider")
 
@@ -190,7 +201,8 @@ class BotInstance:
             self.strategies = [s for s in strategies if s]
 
             if not self.strategies:
-                self.logger.error(f"No strategies loaded from {self.config.strategy_config}")
+                self.setup_error = f"No strategies loaded from {self.config.strategy_config}"
+                self.logger.error(self.setup_error)
                 return False
 
             self.logger.info(f"Loaded {len(self.strategies)} strategies: {', '.join(s.name for s in self.strategies)}")
@@ -218,6 +230,7 @@ class BotInstance:
             return True
 
         except Exception as e:
+            self.setup_error = str(e)
             self.logger.error(f"Setup failed: {e}", exc_info=True)
             return False
 
@@ -226,7 +239,7 @@ class BotInstance:
 
         Runs the main trading loop and handles cleanup.
         """
-        if not await self.setup():
+        if not self.broker and not await self.setup():
             self.logger.error(f"Setup failed, cannot start")
             return
 
@@ -258,6 +271,7 @@ class BotInstance:
                 if self.health_checks:
                     await self.health_checks.save_all()
                     self._last_health_check_save = datetime.now(UTC)
+                    self.logger.debug(f"Health check saved")
 
             except asyncio.CancelledError:
                 break
@@ -301,18 +315,53 @@ class BotInstance:
                 engine_evaluation_cycles_total.labels(bot_name=self.bot_name).inc()
 
                 # Update pending orders
+                pending_count = 0
                 if self.order_manager:
                     self.order_manager.update_pending_orders()
+                    pending_count = len(getattr(self.order_manager, 'pending_orders', []))
 
                 # Refresh portfolio
                 if self.portfolio_manager:
                     self.portfolio_manager.refresh_state()
+
+                # Publish account snapshot to Redis for dashboard
+                if self._event_publisher and self.broker:
+                    try:
+                        snapshot = self.broker.get_account_snapshot()
+                        await self._event_publisher.publish_account_snapshot(
+                            self.bot_name, snapshot, user_id=self._user_id,
+                        )
+                    except Exception as e:
+                        self.logger.debug(f"Account snapshot failed: {e}")
+
+                # Debug: cycle heartbeat
+                self.logger.debug(
+                    f"Cycle #{self._evaluation_count} complete — "
+                    f"symbols: {len(symbols)}, "
+                    f"pending orders: {pending_count}, "
+                    f"next poll in {poll_interval}s"
+                )
+
+                # Publish cycle event to Redis for UI
+                if self._event_publisher:
+                    await self._event_publisher.publish_cycle_complete(
+                        self.bot_name, {
+                            "cycle": self._evaluation_count,
+                            "symbols_scanned": len(symbols),
+                            "pending_orders": pending_count,
+                        }, user_id=self._user_id,
+                    )
 
                 # Sleep before next poll
                 await asyncio.sleep(poll_interval)
 
             except Exception as e:
                 self.logger.error(f"Trading loop error: {e}")
+                if self._event_publisher:
+                    await self._event_publisher.publish_error(
+                        self.bot_name, {"message": str(e)},
+                        user_id=self._user_id,
+                    )
                 await asyncio.sleep(poll_interval)
 
     async def _process_bar(self, bar: Bar) -> None:
@@ -339,6 +388,16 @@ class BotInstance:
             try:
                 signal = strategy.on_bar(bar)
                 if signal:
+                    signal_data = {
+                        "symbol": signal.symbol,
+                        "strategy": strategy.name,
+                        "action": signal.action,
+                        "quantity": float(signal.quantity),
+                        "confidence": float(signal.confidence) if signal.confidence else 0.5,
+                        "price": float(bar.close),
+                        "indicators": signal.metadata or {},
+                    }
+
                     await self.event_logger.log_signal_generated(
                         symbol=signal.symbol,
                         strategy=strategy.name,
@@ -350,6 +409,12 @@ class BotInstance:
                         bot_name=self.bot_name,
                     )
 
+                    # Publish signal to Redis for UI
+                    if self._event_publisher:
+                        await self._event_publisher.publish_signal_generated(
+                            self.bot_name, signal_data, user_id=self._user_id,
+                        )
+
                     # Execute if not paused
                     if not self._paused:
                         order_id = self.portfolio_manager.execute_signal_if_valid(signal)
@@ -359,6 +424,19 @@ class BotInstance:
                                 broker=self.config.broker.type,
                             ).inc()
                             await self._record_trade_entry(strategy, signal, order_id)
+
+                            # Publish trade to Redis for UI
+                            if self._event_publisher:
+                                await self._event_publisher.publish_trade_executed(
+                                    self.bot_name, {
+                                        "symbol": signal.symbol,
+                                        "strategy": strategy.name,
+                                        "action": signal.action,
+                                        "quantity": float(signal.quantity),
+                                        "price": float(bar.close),
+                                        "order_id": order_id,
+                                    }, user_id=self._user_id,
+                                )
 
                             if self.telegram_bot:
                                 await self.telegram_bot.send_trade_alert(

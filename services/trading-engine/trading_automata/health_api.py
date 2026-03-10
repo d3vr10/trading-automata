@@ -37,7 +37,8 @@ async def _status(request: web.Request) -> web.Response:
 async def _metrics(request: web.Request) -> web.Response:
     return web.Response(
         body=generate_latest(),
-        content_type=CONTENT_TYPE_LATEST,
+        content_type="text/plain",
+        charset="utf-8",
     )
 
 
