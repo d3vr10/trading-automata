@@ -169,12 +169,15 @@ class BotOrchestrator:
                 except Exception as e:
                     logger.error(f"Failed to setup bot '{bot_cfg.name}': {e}", exc_info=True)
 
-            if successful_bots == 0:
-                logger.error("No bots were successfully initialized")
+            if successful_bots == 0 and not self._command_listener:
+                logger.error("No bots initialized and no Redis for API-driven commands — cannot start")
                 return False
 
-            bot_names = ', '.join(self.bot_registry.keys())
-            logger.info(f"✅ Orchestrator setup complete: {successful_bots} bot(s) ready [{bot_names}]")
+            if successful_bots > 0:
+                bot_names = ', '.join(self.bot_registry.keys())
+                logger.info(f"✅ Orchestrator setup complete: {successful_bots} bot(s) ready [{bot_names}]")
+            else:
+                logger.info("✅ Orchestrator setup complete: 0 bots — waiting for API commands via Redis")
             return True
 
         except Exception as e:
@@ -220,7 +223,12 @@ class BotOrchestrator:
                 task = asyncio.create_task(bot_instance.start())
                 self._tasks.append(task)
 
-            # Start metrics update loop
+            # Publish engine heartbeat to Redis
+            if self._redis:
+                await self._redis.set("engine:heartbeat", "ok", ex=30)
+                logger.info("Engine heartbeat published to Redis")
+
+            # Start metrics update loop (also refreshes heartbeat)
             metrics_task = asyncio.create_task(self._metrics_loop())
             self._tasks.append(metrics_task)
 
@@ -341,11 +349,118 @@ class BotOrchestrator:
         if not self._command_listener:
             return
 
+        self._command_listener.register_handler("start_bot", self._handle_start_bot)
         self._command_listener.register_handler("pause_bot", self._handle_pause_bot)
         self._command_listener.register_handler("resume_bot", self._handle_resume_bot)
         self._command_listener.register_handler("stop_bot", self._handle_stop_bot)
         self._command_listener.register_handler("get_status", self._handle_get_status)
         logger.debug("Command handlers registered")
+
+    async def _handle_start_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle start_bot command from API — dynamically create and start a bot."""
+        from trading_automata.config.bot_config import BotConfig, BrokerConfig, AllocationConfig, FenceConfig, RiskConfig
+
+        bot_name = data.get("bot_name", "")
+        user_id = data.get("user_id")
+        config = data.get("config", {})
+
+        if bot_name in self.bot_registry:
+            raise ValueError(f"Bot '{bot_name}' is already running")
+
+        try:
+            # Publish "starting" status
+            if self._event_publisher:
+                await self._event_publisher.publish_bot_status_changed(
+                    bot_name, "starting", user_id=user_id,
+                )
+                await self._event_publisher.update_bot_status(
+                    bot_name, {"running": False, "paused": False, "starting": True,
+                               "broker": config.get("broker_type", ""), "error": None},
+                    user_id=user_id,
+                )
+
+            # Build BotConfig from API-provided config (credentials decrypted by API)
+            bot_cfg = BotConfig(
+                name=bot_name,
+                enabled=True,
+                broker=BrokerConfig(
+                    type=config["broker_type"],
+                    environment=config["environment"],
+                    api_key=config["api_key"],
+                    secret_key=config["secret_key"],
+                    passphrase=config.get("passphrase", ""),
+                ),
+                allocation=AllocationConfig(
+                    amount=config.get("allocation", 10000),
+                ),
+                fence=FenceConfig(
+                    type=config.get("fence_type", "hard"),
+                ),
+                risk=RiskConfig(
+                    stop_loss_pct=config.get("stop_loss_pct", 2.0),
+                    take_profit_pct=config.get("take_profit_pct", 6.0),
+                    max_position_size=config.get("max_position_size", 0.1),
+                ),
+                strategy_config=config.get("strategy_id", ""),
+            )
+
+            # Create bot-scoped Telegram if available
+            bot_telegram = None
+            if self.telegram_bot:
+                bot_telegram = BotScopedTelegram(self.telegram_bot, bot_name)
+
+            bot_instance = BotInstance(
+                config=bot_cfg,
+                db=self.db,
+                trade_repo=self.trade_repo,
+                health_checks=self.health_checks,
+                event_logger=self.event_logger,
+                telegram_bot=bot_telegram,
+                session_factory=self.db.session_factory,
+            )
+
+            if await bot_instance.setup():
+                self.bot_instances.append(bot_instance)
+                self.bot_registry[bot_name] = bot_instance
+
+                # Start bot in background
+                task = asyncio.create_task(bot_instance.start())
+                self._tasks.append(task)
+
+                if self._event_publisher:
+                    await self._event_publisher.publish_bot_status_changed(
+                        bot_name, "running", user_id=user_id,
+                    )
+
+                logger.info(f"Bot '{bot_name}' started dynamically via API")
+                return {"bot_name": bot_name, "status": "running"}
+            else:
+                error_msg = f"Bot '{bot_name}' setup failed"
+                logger.error(error_msg)
+                if self._event_publisher:
+                    await self._event_publisher.publish_bot_status_changed(
+                        bot_name, "failed", user_id=user_id,
+                    )
+                    await self._event_publisher.update_bot_status(
+                        bot_name, {"running": False, "paused": False, "starting": False,
+                                   "error": error_msg},
+                        user_id=user_id,
+                    )
+                raise ValueError(error_msg)
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Failed to start bot '{bot_name}': {error_msg}", exc_info=True)
+            if self._event_publisher:
+                await self._event_publisher.publish_bot_status_changed(
+                    bot_name, "failed", user_id=user_id, error=error_msg,
+                )
+                await self._event_publisher.update_bot_status(
+                    bot_name, user_id=user_id,
+                    status_data={"running": False, "paused": False, "starting": False,
+                                 "error": error_msg},
+                )
+            raise
 
     async def _handle_pause_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name", "")
@@ -404,6 +519,13 @@ class BotOrchestrator:
 
                 for state, count in counts.items():
                     engine_bots_total.labels(state=state).set(count)
+
+                # Refresh engine heartbeat in Redis
+                if self._redis:
+                    try:
+                        await self._redis.set("engine:heartbeat", "ok", ex=30)
+                    except Exception:
+                        pass
 
                 await asyncio.sleep(15)  # Update every 15 seconds
         except asyncio.CancelledError:

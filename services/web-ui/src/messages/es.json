@@ -101,6 +101,12 @@
     "deleteConfirmDescription": "¿Eliminar el bot ''{name}''? Se eliminará la configuración permanentemente.",
     "deleteConfirm": "Eliminar",
     "cancel": "Cancelar",
+    "engineOffline": "El motor de trading está desconectado",
+    "engineOfflineDescription": "El motor de trading no responde. No se pueden iniciar bots hasta que vuelva a estar en línea.",
+    "engineOnline": "Motor en línea",
+    "statusStarting": "Iniciando...",
+    "startTimeout": "El bot no se inició en el tiempo esperado. Revisa los logs del motor.",
+    "startFailed": "El bot no pudo iniciarse: {error}",
     "detail": {
       "backToBots": "Volver a Bots",
       "notFound": "Bot no encontrado",

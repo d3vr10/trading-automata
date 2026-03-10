@@ -62,7 +62,7 @@ export default function BotDetailPage() {
       else if (action === "pause") await pauseBot(botId);
       else if (action === "resume") await resumeBot(botId);
       else await stopBot(botId);
-      toast.success(t("actionSent", { botName: bot?.name, action }));
+      toast.success(t("actionSent", { botName: bot?.name ?? "", action }));
       setTimeout(load, 1000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("actionFailed", { action }));

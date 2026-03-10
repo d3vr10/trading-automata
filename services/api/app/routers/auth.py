@@ -3,7 +3,9 @@
 from datetime import datetime, timedelta, UTC
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import os
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,14 +77,7 @@ async def login(
     refresh_token = create_refresh_token(user.id)
 
     # Set refresh token as httponly cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=7 * 24 * 3600,  # 7 days
-    )
+    _set_refresh_cookie(response, refresh_token)
 
     return TokenResponse(access_token=access_token)
 
@@ -91,7 +86,7 @@ async def login(
 async def refresh(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
-    refresh_token: str = "",  # From cookie or body
+    refresh_token: Annotated[str, Cookie()] = "",
 ):
     """Get a new access token using a refresh token."""
     payload = verify_token(refresh_token, expected_type="refresh")
@@ -118,16 +113,22 @@ async def refresh(
     access_token = create_access_token(user.id, user.role)
     new_refresh = create_refresh_token(user.id)
 
-    response.set_cookie(
-        key="refresh_token",
-        value=new_refresh,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=7 * 24 * 3600,
-    )
+    _set_refresh_cookie(response, new_refresh)
 
     return TokenResponse(access_token=access_token)
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    """Set the refresh token cookie, secure only in production."""
+    is_prod = os.getenv("ENVIRONMENT", "development") == "production"
+    response.set_cookie(
+        key="refresh_token",
+        value=token,
+        httponly=True,
+        secure=is_prod,
+        samesite="lax",
+        max_age=7 * 24 * 3600,  # 7 days
+    )
 
 
 @router.put("/password")

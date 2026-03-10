@@ -101,6 +101,12 @@
     "deleteConfirmDescription": "Delete bot ''{name}''? This will remove the configuration permanently.",
     "deleteConfirm": "Delete",
     "cancel": "Cancel",
+    "engineOffline": "Trading engine is offline",
+    "engineOfflineDescription": "The trading engine is not responding. Bots cannot be started until it is back online.",
+    "engineOnline": "Engine online",
+    "statusStarting": "Starting...",
+    "startTimeout": "Bot did not start within the expected time. Check engine logs for details.",
+    "startFailed": "Bot failed to start: {error}",
     "detail": {
       "backToBots": "Back to Bots",
       "notFound": "Bot not found",

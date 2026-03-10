@@ -12,6 +12,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import BotConfiguration, BrokerCredential, User
 from app.services import bot_service
+from app.services.credential_service import decrypt_credential
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -249,6 +250,15 @@ async def get_all_bot_status(
     return await bot_service.get_bot_statuses(redis_client, current_user.id)
 
 
+@router.get("/engine/health")
+async def engine_health(
+    current_user: Annotated[User, Depends(get_current_user)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Check if the trading engine is online."""
+    return await bot_service.get_engine_health(redis_client)
+
+
 @router.post("/{bot_id}/start", response_model=BotCommandResponse)
 async def start_bot(
     bot_id: int,
@@ -271,9 +281,11 @@ async def start_bot(
         user_id=current_user.id,
         config={
             "strategy_id": bot.strategy_id,
-            "credential_id": bot.credential_id,
             "broker_type": cred.broker_type,
             "environment": cred.environment,
+            "api_key": decrypt_credential(cred.encrypted_api_key),
+            "secret_key": decrypt_credential(cred.encrypted_secret_key),
+            "passphrase": decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
             "allocation": float(bot.allocation),
             "fence_type": bot.fence_type,
             "fence_overage_pct": bot.fence_overage_pct,

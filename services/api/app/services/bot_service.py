@@ -46,6 +46,18 @@ async def send_start_bot_command(
     return {"request_id": request_id, "action": "start_bot", "bot_name": bot_name}
 
 
+async def get_engine_health(redis_client: aioredis.Redis) -> dict:
+    """Check if the trading engine is alive via its Redis heartbeat."""
+    try:
+        heartbeat = await redis_client.get("engine:heartbeat")
+        return {
+            "connected": heartbeat is not None,
+            "status": "online" if heartbeat else "offline",
+        }
+    except Exception:
+        return {"connected": False, "status": "offline"}
+
+
 async def get_bot_statuses(
     redis_client: aioredis.Redis,
     user_id: int,

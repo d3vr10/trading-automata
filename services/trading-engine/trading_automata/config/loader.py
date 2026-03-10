@@ -86,10 +86,20 @@ def load_bot_configs(
     has_bots_dir = bots_dir_path.exists() and bots_dir_path.is_dir()
 
     if not has_bots_yaml and not has_bots_dir:
-        raise FileNotFoundError(
-            f"No bot configuration found. "
-            f"Create either {bots_yaml} or directory {bots_dir}/"
-        )
+        logger.info("No YAML bot configuration found — running in API-driven mode")
+        # Return config with defaults and no bots
+        global_config_dict = {}
+        env_overrides = {
+            'database_url': 'DATABASE_URL',
+            'telegram_token': 'TELEGRAM_TOKEN',
+            'telegram_chat_id': 'TELEGRAM_CHAT_ID',
+            'log_level': 'LOG_LEVEL',
+            'log_file': 'LOG_FILE',
+        }
+        for config_key, env_var in env_overrides.items():
+            if env_var in os.environ:
+                global_config_dict[config_key] = os.environ[env_var]
+        return OrchestratorConfig(global_config=GlobalConfig(**global_config_dict), bots=[])
 
     # Load global config
     global_data = {}
@@ -154,11 +164,8 @@ def load_bot_configs(
     bots = list(reversed(unique_bots))  # Restore original order
 
     if not bots:
-        raise ValueError(
-            f"No bot configurations found in {bots_yaml} or {bots_dir}/. "
-            f"Create at least one bot configuration."
-        )
-
-    logger.info(f"Loaded {len(bots)} bot configuration(s): {[b.name for b in bots]}")
+        logger.info("No bot configurations found in YAML — running in API-driven mode")
+    else:
+        logger.info(f"Loaded {len(bots)} bot configuration(s): {[b.name for b in bots]}")
 
     return OrchestratorConfig(global_config=global_config, bots=bots)
