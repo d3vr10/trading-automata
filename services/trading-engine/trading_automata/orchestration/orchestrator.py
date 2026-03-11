@@ -189,13 +189,13 @@ class BotOrchestrator:
                         try:
                             # Convert recovery item to bot config
                             from trading_automata.config.bot_config import BotConfig
-                            bot_cfg_dict = build_bot_config_from_recovery(item)
+                            bot_cfg_dict, user_id, desired_state = build_bot_config_from_recovery(item)
                             bot_cfg = BotConfig(**bot_cfg_dict)
 
                             logger.info(
                                 f"Recovering bot '{item['bot_name']}' "
-                                f"(desired_state={item['desired_state']}) "
-                                f"for user {item['user_id']}"
+                                f"(desired_state={desired_state}) "
+                                f"for user {user_id}"
                             )
 
                             # Create bot-scoped Telegram if shared Telegram exists
@@ -212,7 +212,7 @@ class BotOrchestrator:
                                 event_logger=self.event_logger,
                                 telegram_bot=bot_telegram,
                                 session_factory=self.db.session_factory,
-                                user_id=item["user_id"],
+                                user_id=user_id,
                             )
 
                             if await bot_instance.setup():

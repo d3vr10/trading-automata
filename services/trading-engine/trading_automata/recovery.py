@@ -39,18 +39,20 @@ async def fetch_recovery_bots(api_url: str) -> List[Dict[str, Any]]:
         return []
 
 
-def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> Dict[str, Any]:
+def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> tuple[Dict[str, Any], int, str]:
     """Convert API recovery item to BotConfig format.
 
     Args:
         recovery_item: Item from GET /api/bots/recovery/pending
 
     Returns:
-        Bot configuration dict compatible with BotInstance
+        Tuple of (bot_config_dict, user_id, desired_state)
+        bot_config_dict is compatible with BotConfig Pydantic model
     """
-    return {
+    from decimal import Decimal
+
+    config = {
         "name": recovery_item["bot_name"],
-        "strategy_id": recovery_item["strategy_id"],
         "enabled": True,
         "broker": {
             "type": recovery_item["broker_type"],
@@ -59,19 +61,23 @@ def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> Dict[str, A
             "secret_key": recovery_item["secret_key"],
             "passphrase": recovery_item.get("passphrase", ""),
         },
-        "risk_management": {
-            "allocation": recovery_item["allocation"],
-            "fence_type": recovery_item["fence_type"],
-            "fence_overage_pct": recovery_item["fence_overage_pct"],
+        "allocation": {
+            "type": "dollars",
+            "amount": Decimal(str(recovery_item["allocation"])),
         },
-        "trading": {
+        "fence": {
+            "type": recovery_item["fence_type"],
+            "overage_pct": recovery_item["fence_overage_pct"],
+        },
+        "risk": {
             "stop_loss_pct": recovery_item["stop_loss_pct"],
             "take_profit_pct": recovery_item["take_profit_pct"],
             "max_position_size": recovery_item["max_position_size"],
         },
-        "polling": {
+        "trade_frequency": {
             "poll_interval_minutes": recovery_item["poll_interval_minutes"],
         },
-        "user_id": recovery_item["user_id"],
-        "desired_state": recovery_item["desired_state"],
+        "strategy_config": "config/strategies.yaml",
     }
+
+    return config, recovery_item["user_id"], recovery_item["desired_state"]
