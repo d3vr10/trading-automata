@@ -14,6 +14,7 @@ from aiohttp.web import AppRunner
 
 from trading_automata.commands.listener import CommandListener
 from trading_automata.commands.publisher import EventPublisher
+from trading_automata.recovery import fetch_recovery_bots, build_bot_config_from_recovery
 from trading_automata.health_api import start_health_server
 from trading_automata.metrics import engine_bots_total, engine_heartbeat_age_seconds
 from trading_automata.config.loader import load_bot_configs
@@ -168,6 +169,64 @@ class BotOrchestrator:
 
                 except Exception as e:
                     logger.error(f"Failed to setup bot '{bot_cfg.name}': {e}", exc_info=True)
+
+            # Recover bots from API (desired_state = 'running' or 'paused')
+            if self._redis:
+                api_url = os.getenv("API_URL", "http://api:8000")
+                logger.info(f"Fetching recovery bots from {api_url}...")
+                recovery_items = await fetch_recovery_bots(api_url)
+
+                # Filter out bots already loaded from config
+                config_bot_names = {bot.name for bot in self.orchestrator_config.bots}
+                recovery_bots = [
+                    item for item in recovery_items
+                    if item["bot_name"] not in config_bot_names
+                ]
+
+                if recovery_bots:
+                    logger.info(f"Recovering {len(recovery_bots)} bot(s) from database...")
+                    for item in recovery_bots:
+                        try:
+                            # Convert recovery item to bot config
+                            from trading_automata.config.bot_config import BotConfig
+                            bot_cfg_dict = build_bot_config_from_recovery(item)
+                            bot_cfg = BotConfig(**bot_cfg_dict)
+
+                            logger.info(
+                                f"Recovering bot '{item['bot_name']}' "
+                                f"(desired_state={item['desired_state']}) "
+                                f"for user {item['user_id']}"
+                            )
+
+                            # Create bot-scoped Telegram if shared Telegram exists
+                            bot_telegram = None
+                            if self.telegram_bot:
+                                bot_telegram = BotScopedTelegram(self.telegram_bot, item['bot_name'])
+
+                            # Create and setup bot instance
+                            bot_instance = BotInstance(
+                                config=bot_cfg,
+                                db=self.db,
+                                trade_repo=self.trade_repo,
+                                health_checks=self.health_checks,
+                                event_logger=self.event_logger,
+                                telegram_bot=bot_telegram,
+                                session_factory=self.db.session_factory,
+                                user_id=item["user_id"],
+                            )
+
+                            if await bot_instance.setup():
+                                self.bot_instances.append(bot_instance)
+                                self.bot_registry[item['bot_name']] = bot_instance
+                                successful_bots += 1
+                                logger.info(f"Recovered bot '{item['bot_name']}' successfully")
+                            else:
+                                logger.error(f"Failed to recover bot '{item['bot_name']}'")
+
+                        except Exception as e:
+                            logger.error(f"Failed to recover bot '{item['bot_name']}': {e}", exc_info=True)
+                else:
+                    logger.debug("No recovery bots found")
 
             if successful_bots == 0 and not self._command_listener:
                 logger.error("No bots initialized and no Redis for API-driven commands — cannot start")

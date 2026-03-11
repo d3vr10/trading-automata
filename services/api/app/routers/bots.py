@@ -247,6 +247,71 @@ async def delete_bot(
     await db.commit()
 
 
+# ---- Recovery (internal use by engine) ----
+
+class BotRecoveryItem(BaseModel):
+    """Bot config for recovery on engine startup."""
+    user_id: int
+    bot_id: int
+    bot_name: str
+    desired_state: str  # 'running' or 'paused'
+    strategy_id: str
+    broker_type: str
+    environment: str
+    api_key: str
+    secret_key: str
+    passphrase: str
+    allocation: float
+    fence_type: str
+    fence_overage_pct: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    max_position_size: float
+    poll_interval_minutes: int
+
+
+@router.get("/recovery/pending", response_model=list[BotRecoveryItem])
+async def get_recovery_pending(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get all bots that should be recovered on engine startup.
+
+    Returns bots with desired_state IN ('running', 'paused') across all users.
+    Internal endpoint used by the trading engine for startup recovery.
+    No auth required — engine calls this at startup before handling user commands.
+    """
+    result = await db.execute(
+        select(BotConfiguration, BrokerCredential)
+        .join(BrokerCredential, BotConfiguration.credential_id == BrokerCredential.id)
+        .where(BotConfiguration.desired_state.in_(["running", "paused"]))
+        .order_by(BotConfiguration.user_id, BotConfiguration.id)
+    )
+
+    items = []
+    for bot, cred in result.all():
+        items.append(BotRecoveryItem(
+            user_id=bot.user_id,
+            bot_id=bot.id,
+            bot_name=bot.name,
+            desired_state=bot.desired_state,
+            strategy_id=bot.strategy_id,
+            broker_type=cred.broker_type,
+            environment=cred.environment,
+            api_key=decrypt_credential(cred.encrypted_api_key),
+            secret_key=decrypt_credential(cred.encrypted_secret_key),
+            passphrase=decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
+            allocation=float(bot.allocation),
+            fence_type=bot.fence_type,
+            fence_overage_pct=bot.fence_overage_pct,
+            stop_loss_pct=bot.stop_loss_pct,
+            take_profit_pct=bot.take_profit_pct,
+            max_position_size=bot.max_position_size,
+            poll_interval_minutes=bot.poll_interval_minutes,
+        ))
+
+    return items
+
+
 # ---- Lifecycle commands (Redis) ----
 
 @router.get("/portfolio/history")
@@ -430,8 +495,9 @@ async def start_bot(
         },
     )
 
-    # Mark as active in DB
+    # Mark as active + desired_state in DB
     bot.is_active = True
+    bot.desired_state = "running"
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="start", status="command_sent")
@@ -447,6 +513,10 @@ async def pause_bot(
     """Pause a running bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
     await bot_service.send_bot_command(redis_client, "pause_bot", bot.name, current_user.id)
+
+    bot.desired_state = "paused"
+    await db.commit()
+
     return BotCommandResponse(bot_name=bot.name, action="pause", status="command_sent")
 
 
@@ -460,6 +530,10 @@ async def resume_bot(
     """Resume a paused bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
     await bot_service.send_bot_command(redis_client, "resume_bot", bot.name, current_user.id)
+
+    bot.desired_state = "running"
+    await db.commit()
+
     return BotCommandResponse(bot_name=bot.name, action="resume", status="command_sent")
 
 
@@ -475,6 +549,7 @@ async def stop_bot(
     await bot_service.send_bot_command(redis_client, "stop_bot", bot.name, current_user.id)
 
     bot.is_active = False
+    bot.desired_state = "stopped"
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="stop", status="command_sent")
