@@ -4,6 +4,7 @@ import logging
 from .base import IBroker, Environment
 from .alpaca_broker import AlpacaBroker
 from .coinbase_broker import CoinbaseBroker
+from .rate_limiter import RateLimitedBroker
 
 if TYPE_CHECKING:
     from config.settings import Settings
@@ -90,11 +91,12 @@ class BrokerFactory:
             if 'api_key' not in config or 'secret_key' not in config:
                 raise ValueError("Alpaca broker requires 'api_key' and 'secret_key' in config")
             logger.info(f"Creating Alpaca broker ({environment.value} mode)")
-            return AlpacaBroker(
+            broker = AlpacaBroker(
                 api_key=config['api_key'],
                 secret_key=config['secret_key'],
                 environment=environment
             )
+            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0)
 
         elif broker_type == 'coinbase':
             if 'api_key' not in config or 'secret_key' not in config or 'passphrase' not in config:
@@ -102,12 +104,13 @@ class BrokerFactory:
                     "Coinbase broker requires 'api_key', 'secret_key', and 'passphrase' in config"
                 )
             logger.info(f"Creating Coinbase broker ({environment.value} mode)")
-            return CoinbaseBroker(
+            broker = CoinbaseBroker(
                 api_key=config['api_key'],
                 secret_key=config['secret_key'],
                 passphrase=config['passphrase'],
                 environment=environment
             )
+            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0)
 
         else:
             raise ValueError(

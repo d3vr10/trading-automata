@@ -28,7 +28,7 @@ from app.metrics import (
     redis_connection_up, db_pool_active_connections, db_pool_size,
 )
 from app.middleware.rate_limit import RateLimitMiddleware
-from app.routers import auth, users, bots, credentials, trades, strategies, ws, notifications
+from app.routers import audit, auth, users, bots, credentials, trades, strategies, ws, notifications
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -134,6 +134,7 @@ app.include_router(credentials.router)
 app.include_router(trades.router)
 app.include_router(strategies.router)
 app.include_router(notifications.router)
+app.include_router(audit.router)
 app.include_router(ws.router)
 
 # Prometheus /metrics endpoint

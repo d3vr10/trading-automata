@@ -8,10 +8,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import Request
+
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import BotConfiguration, BrokerCredential, User
 from app.services import bot_service, trade_service
+from app.services.audit_service import log_action
 from app.services.credential_service import decrypt_credential
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
@@ -590,6 +593,7 @@ async def run_backtest(
 @router.post("/{bot_id}/start", response_model=BotCommandResponse)
 async def start_bot(
     bot_id: int,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
@@ -627,6 +631,7 @@ async def start_bot(
     # Mark as active + desired_state in DB
     bot.is_active = True
     bot.desired_state = "running"
+    await log_action(db, current_user.id, "start_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="start", status="command_sent")
@@ -635,6 +640,7 @@ async def start_bot(
 @router.post("/{bot_id}/pause", response_model=BotCommandResponse)
 async def pause_bot(
     bot_id: int,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
@@ -644,6 +650,7 @@ async def pause_bot(
     await bot_service.send_bot_command(redis_client, "pause_bot", bot.name, current_user.id)
 
     bot.desired_state = "paused"
+    await log_action(db, current_user.id, "pause_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="pause", status="command_sent")
@@ -652,6 +659,7 @@ async def pause_bot(
 @router.post("/{bot_id}/resume", response_model=BotCommandResponse)
 async def resume_bot(
     bot_id: int,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
@@ -661,6 +669,7 @@ async def resume_bot(
     await bot_service.send_bot_command(redis_client, "resume_bot", bot.name, current_user.id)
 
     bot.desired_state = "running"
+    await log_action(db, current_user.id, "resume_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="resume", status="command_sent")
@@ -669,6 +678,7 @@ async def resume_bot(
 @router.post("/{bot_id}/stop", response_model=BotCommandResponse)
 async def stop_bot(
     bot_id: int,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
@@ -679,6 +689,7 @@ async def stop_bot(
 
     bot.is_active = False
     bot.desired_state = "stopped"
+    await log_action(db, current_user.id, "stop_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
 
     return BotCommandResponse(bot_name=bot.name, action="stop", status="command_sent")

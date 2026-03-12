@@ -211,3 +211,17 @@ class PortfolioSnapshot(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "bot_name", "snapshot_date", name="uq_portfolio_snapshot_daily"),
     )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True)  # start_bot, stop_bot, create_credential, etc.
+    resource_type = Column(String(50), nullable=False)  # bot, credential, user
+    resource_id = Column(Integer, nullable=True)
+    resource_name = Column(String(200), nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)

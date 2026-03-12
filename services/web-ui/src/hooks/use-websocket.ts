@@ -15,6 +15,7 @@ type EventHandler = (event: WsEvent) => void;
 
 export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const handlersRef = useRef<Map<string, Set<EventHandler>>>(new Map());
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -23,6 +24,9 @@ export function useWebSocket() {
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
+    // Don't open a second socket if one is already connecting/open
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+
     try {
       const url = getWebSocketUrl();
       if (!url || url.includes("null")) return; // no token yet
@@ -33,6 +37,7 @@ export function useWebSocket() {
       ws.onopen = () => {
         setIsConnected(true);
         retriesRef.current = 0;
+        setRetryCount(0);
       };
 
       ws.onmessage = (msg) => {
@@ -61,6 +66,7 @@ export function useWebSocket() {
         if (mountedRef.current) {
           const delay = Math.min(1000 * 2 ** retriesRef.current, 30000);
           retriesRef.current++;
+          setRetryCount(retriesRef.current);
           reconnectTimer.current = setTimeout(connect, delay);
         }
       };
@@ -83,6 +89,26 @@ export function useWebSocket() {
     };
   }, [connect]);
 
+  // Re-connect when browser regains focus or comes back online
+  useEffect(() => {
+    const handleOnline = () => {
+      if (!wsRef.current || wsRef.current.readyState > WebSocket.OPEN) {
+        retriesRef.current = 0;
+        connect();
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") handleOnline();
+    };
+
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [connect]);
+
   const on = useCallback((eventType: string, handler: EventHandler) => {
     if (!handlersRef.current.has(eventType)) {
       handlersRef.current.set(eventType, new Set());
@@ -95,5 +121,5 @@ export function useWebSocket() {
     };
   }, []);
 
-  return { isConnected, on };
+  return { isConnected, retryCount, on };
 }

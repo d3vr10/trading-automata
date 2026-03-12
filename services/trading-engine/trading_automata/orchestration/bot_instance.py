@@ -17,6 +17,8 @@ from trading_automata.brokers.factory import BrokerFactory
 from trading_automata.brokers.base import Environment, IBroker
 from trading_automata.config.bot_config import BotConfig
 from trading_automata.data.alpaca_data import AlpacaDataProvider
+from trading_automata.data.coinbase_data import CoinbaseDataProvider
+from trading_automata.data.base import IDataProvider
 from trading_automata.data.models import Bar
 from trading_automata.database.models import DatabaseConnection
 from trading_automata.database.repository import TradeRepository
@@ -91,7 +93,7 @@ class BotInstance:
 
         # Core trading components
         self.broker: Optional[IBroker] = None
-        self.data_provider: Optional[AlpacaDataProvider] = None
+        self.data_provider: Optional[IDataProvider] = None
         self.order_manager: Optional[OrderManager] = None
         self.portfolio_manager: Optional[VirtualPortfolioManager] = None
         self.position_tracker: PositionTracker = PositionTracker(config.risk)
@@ -158,15 +160,21 @@ class BotInstance:
                 self.logger.error(self.setup_error)
                 return False
 
-            # Create data provider
+            # Create data provider (matching broker type)
             self.logger.debug(f"Creating data provider...")
             data_api_key = self.config.data_provider.api_key or self.config.broker.api_key
             data_secret_key = self.config.data_provider.secret_key or self.config.broker.secret_key
 
-            self.data_provider = AlpacaDataProvider(
-                api_key=data_api_key,
-                secret_key=data_secret_key,
-            )
+            if self.config.broker.type.lower() == "coinbase":
+                self.data_provider = CoinbaseDataProvider(
+                    api_key=data_api_key,
+                    secret_key=data_secret_key,
+                )
+            else:
+                self.data_provider = AlpacaDataProvider(
+                    api_key=data_api_key,
+                    secret_key=data_secret_key,
+                )
 
             # Connect data provider
             if not self.data_provider.connect():

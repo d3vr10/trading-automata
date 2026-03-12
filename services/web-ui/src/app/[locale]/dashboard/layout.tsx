@@ -6,6 +6,30 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
+import { useWebSocket } from "@/hooks/use-websocket";
+import { Wifi, WifiOff } from "lucide-react";
+
+function ConnectionStatus() {
+  const { isConnected, retryCount } = useWebSocket();
+
+  if (isConnected) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-emerald-400" title="Real-time updates active">
+        <Wifi className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Live</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-amber-400 animate-pulse" title={`Reconnecting... (attempt ${retryCount})`}>
+      <WifiOff className="h-3.5 w-3.5" />
+      <span className="hidden sm:inline">
+        {retryCount > 0 ? `Reconnecting (${retryCount})...` : "Connecting..."}
+      </span>
+    </div>
+  );
+}
 
 function DashboardGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -37,6 +61,9 @@ function DashboardGuard({ children }: { children: React.ReactNode }) {
       <main className="flex-1 flex flex-col min-h-screen">
         <header className="sticky top-0 z-30 flex h-12 items-center gap-3 px-4 glass-subtle">
           <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
+          <div className="ml-auto">
+            <ConnectionStatus />
+          </div>
         </header>
         <div className="flex-1 p-6">{children}</div>
       </main>

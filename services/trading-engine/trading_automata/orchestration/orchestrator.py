@@ -606,6 +606,7 @@ class BotOrchestrator:
         from trading_automata.backtesting.engine import BacktestEngine
         from trading_automata.config.bot_config import RiskConfig
         from trading_automata.data.alpaca_data import AlpacaDataProvider
+        from trading_automata.data.coinbase_data import CoinbaseDataProvider
         from trading_automata.strategies.registry import StrategyRegistry
 
         strategy_id = data.get("strategy_id", "")
