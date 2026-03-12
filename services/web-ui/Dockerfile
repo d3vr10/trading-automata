@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm install --ignore-scripts && npm rebuild
+RUN npm install
 
 COPY . .
 RUN npm run build
