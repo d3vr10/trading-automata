@@ -98,6 +98,44 @@ async def create_credential(
     )
 
 
+@router.put("/{credential_id}", response_model=CredentialResponse)
+async def update_credential(
+    credential_id: int,
+    body: UpdateCredentialRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update broker credential keys (for key rotation)."""
+    result = await db.execute(
+        select(BrokerCredential).where(
+            BrokerCredential.id == credential_id,
+            BrokerCredential.user_id == current_user.id,
+        )
+    )
+    cred = result.scalar_one_or_none()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+
+    if body.label is not None:
+        cred.label = body.label
+    if body.api_key is not None:
+        cred.encrypted_api_key = encrypt_credential(body.api_key)
+    if body.secret_key is not None:
+        cred.encrypted_secret_key = encrypt_credential(body.secret_key)
+    if body.passphrase is not None:
+        cred.encrypted_passphrase = encrypt_credential(body.passphrase)
+
+    await db.commit()
+    await db.refresh(cred)
+    return CredentialResponse(
+        id=cred.id,
+        broker_type=cred.broker_type,
+        environment=cred.environment,
+        label=cred.label,
+        api_key_masked=_mask_key(cred.encrypted_api_key),
+    )
+
+
 @router.delete("/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_credential(
     credential_id: int,

@@ -106,6 +106,53 @@ async def broadcast_event(event_data: dict) -> None:
             conns.discard(ws)
 
 
+async def _maybe_send_notification(event_data: dict) -> None:
+    """Check user prefs and send email notification if enabled."""
+    from app.services import notification_service as ns
+
+    if not ns.is_configured():
+        return
+
+    event_type = event_data.get("event", "")
+    user_id = event_data.get("user_id")
+    bot_name = event_data.get("bot_name", "?")
+    data = event_data.get("data", {})
+
+    pref_map = {
+        "trade_executed": "notify_trade_executed",
+        "error": "notify_bot_error",
+        "bot_status_changed": "notify_bot_stopped",
+    }
+    pref_key = pref_map.get(event_type)
+    if not pref_key or not user_id:
+        return
+
+    try:
+        async with async_session() as db:
+            prefs = await ns.get_notification_prefs(db, user_id)
+            if not prefs.get(pref_key, False):
+                return
+            email = await ns.get_user_email(db, user_id)
+            if not email:
+                return
+
+        if event_type == "trade_executed":
+            subject, html = ns.build_trade_email(bot_name, data)
+        elif event_type == "error":
+            subject, html = ns.build_error_email(bot_name, data)
+        elif event_type == "bot_status_changed":
+            subject, html = ns.build_status_email(bot_name, data)
+        else:
+            return
+
+        # Run blocking SMTP in thread pool
+        await asyncio.get_event_loop().run_in_executor(
+            None, ns.send_email, email, subject, html,
+        )
+    except Exception as e:
+        logger.warning(f"Notification failed for user {user_id}: {e}")
+
+
 async def redis_event_listener(redis_client) -> None:
     """Subscribe to Redis events channel and forward to WebSocket clients.
 
@@ -126,6 +173,8 @@ async def redis_event_listener(redis_client) -> None:
                     event_type = event_data.get("event", "unknown")
                     ws_messages_forwarded_total.labels(event_type=event_type).inc()
                     await broadcast_event(event_data)
+                    # Fire-and-forget email notification
+                    asyncio.create_task(_maybe_send_notification(event_data))
                 except (json.JSONDecodeError, Exception) as e:
                     logger.warning(f"Failed to process Redis event: {e}")
     except asyncio.CancelledError:

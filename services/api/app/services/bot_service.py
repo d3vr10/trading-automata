@@ -52,6 +52,43 @@ async def send_start_bot_command(
     return {"request_id": request_id, "action": "start_bot", "bot_name": bot_name}
 
 
+EVENTS_CHANNEL = "engine:events"
+
+
+async def send_command_and_wait(
+    redis_client: aioredis.Redis,
+    command: dict,
+    timeout: float = 120.0,
+) -> dict:
+    """Send a command and wait for the response via Redis pub/sub."""
+    request_id = command["request_id"]
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(EVENTS_CHANNEL)
+
+    try:
+        await redis_client.publish(COMMANDS_CHANNEL, json.dumps(command))
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=1.0,
+            )
+            if message and message["type"] == "message":
+                try:
+                    data = json.loads(message["data"])
+                    if (data.get("event") == "command_response"
+                            and data.get("data", {}).get("request_id") == request_id):
+                        resp = data["data"]
+                        if resp.get("success"):
+                            return resp.get("data", {})
+                        raise Exception(resp.get("error", "Command failed"))
+                except json.JSONDecodeError:
+                    continue
+        raise TimeoutError("Engine did not respond in time")
+    finally:
+        await pubsub.unsubscribe(EVENTS_CHANNEL)
+        await pubsub.close()
+
+
 async def get_engine_health(redis_client: aioredis.Redis) -> dict:
     """Check if the trading engine is alive via its Redis heartbeat."""
     try:

@@ -413,6 +413,7 @@ class BotOrchestrator:
         self._command_listener.register_handler("resume_bot", self._handle_resume_bot)
         self._command_listener.register_handler("stop_bot", self._handle_stop_bot)
         self._command_listener.register_handler("get_status", self._handle_get_status)
+        self._command_listener.register_handler("run_backtest", self._handle_run_backtest)
         logger.debug("Command handlers registered")
 
     async def _handle_start_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -598,6 +599,88 @@ class BotOrchestrator:
     async def _handle_get_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name")
         return self.get_bot_status(bot_name)
+
+    async def _handle_run_backtest(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run a backtest for a strategy over historical data."""
+        from datetime import datetime, timedelta
+        from trading_automata.backtesting.engine import BacktestEngine
+        from trading_automata.config.bot_config import RiskConfig
+        from trading_automata.data.alpaca_data import AlpacaDataProvider
+        from trading_automata.strategies.registry import StrategyRegistry
+
+        strategy_id = data.get("strategy_id", "")
+        symbol = data.get("symbol", "")
+        days = data.get("days", 90)
+        initial_capital = data.get("initial_capital", 10000)
+        stop_loss_pct = data.get("stop_loss_pct", 2.0)
+        take_profit_pct = data.get("take_profit_pct", 6.0)
+        trailing_stop = data.get("trailing_stop", False)
+
+        # Instantiate strategy
+        registry = StrategyRegistry()
+        registry.load_from_yaml("config/strategies.yaml")
+        strategy_configs = registry.get_configs()
+        strat_cfg = next((c for c in strategy_configs if c.get("name") == strategy_id), None)
+        if not strat_cfg:
+            raise ValueError(f"Strategy '{strategy_id}' not found")
+
+        strategy = registry.create_strategy(strat_cfg)
+
+        # Fetch historical bars
+        # Use the first running bot's data provider, or create a temporary one
+        provider = None
+        for bot in self.bot_registry.values():
+            if bot.data_provider:
+                provider = bot.data_provider
+                break
+        if not provider:
+            # Create temporary provider using env vars
+            import os
+            provider = AlpacaDataProvider(
+                api_key=os.getenv("ALPACA_API_KEY", ""),
+                secret_key=os.getenv("ALPACA_SECRET_KEY", ""),
+            )
+
+        end = datetime.now()
+        start = end - timedelta(days=days)
+        bars = provider.get_bars(symbol, "1d", start, end)
+
+        if not bars:
+            raise ValueError(f"No historical data for {symbol}")
+
+        # Warm up strategy
+        warmup_bars = bars[:min(50, len(bars) // 4)]
+        for bar in warmup_bars:
+            strategy.on_bar(bar)
+
+        # Run backtest on remaining bars
+        test_bars = bars[len(warmup_bars):]
+        risk = RiskConfig(
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            trailing_stop=trailing_stop,
+        )
+        engine = BacktestEngine(strategy, risk, initial_capital=initial_capital)
+        result = engine.run(test_bars)
+
+        return {
+            "strategy": result.strategy_name,
+            "symbol": result.symbol,
+            "start_date": result.start_date,
+            "end_date": result.end_date,
+            "initial_capital": result.initial_capital,
+            "final_capital": result.final_capital,
+            "total_return_pct": result.total_return_pct,
+            "total_trades": result.total_trades,
+            "winning_trades": result.winning_trades,
+            "losing_trades": result.losing_trades,
+            "win_rate": result.win_rate,
+            "best_trade_pct": result.best_trade_pct,
+            "worst_trade_pct": result.worst_trade_pct,
+            "max_drawdown_pct": result.max_drawdown_pct,
+            "sharpe_ratio": result.sharpe_ratio,
+            "equity_curve": result.equity_curve[-100:],  # Last 100 points for UI
+        }
 
     async def _metrics_loop(self) -> None:
         """Periodically update Prometheus fleet gauges."""

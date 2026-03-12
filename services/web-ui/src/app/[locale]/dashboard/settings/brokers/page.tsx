@@ -10,10 +10,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  listCredentials, createCredential, deleteCredential, type BrokerCredential,
+  listCredentials, createCredential, deleteCredential, updateCredential, type BrokerCredential,
 } from "@/lib/api";
 import { toast } from "sonner";
-import { KeyRound, Plus, Trash2 } from "lucide-react";
+import { KeyRound, Plus, Trash2, RefreshCw } from "lucide-react";
 import { CredentialSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -33,6 +33,11 @@ export default function BrokersPage() {
   const [passphrase, setPassphrase] = useState("");
   const [label, setLabel] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [rotateTarget, setRotateTarget] = useState<BrokerCredential | null>(null);
+  const [rotateApiKey, setRotateApiKey] = useState("");
+  const [rotateSecretKey, setRotateSecretKey] = useState("");
+  const [rotatePassphrase, setRotatePassphrase] = useState("");
+  const [rotating, setRotating] = useState(false);
 
   async function load() {
     try {
@@ -77,6 +82,29 @@ export default function BrokersPage() {
       load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete");
+    }
+  }
+
+  async function handleRotate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rotateTarget) return;
+    setRotating(true);
+    try {
+      await updateCredential(rotateTarget.id, {
+        api_key: rotateApiKey || undefined,
+        secret_key: rotateSecretKey || undefined,
+        passphrase: rotatePassphrase || undefined,
+      });
+      toast.success(t("brokers.keysRotated"));
+      setRotateTarget(null);
+      setRotateApiKey("");
+      setRotateSecretKey("");
+      setRotatePassphrase("");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to rotate keys");
+    } finally {
+      setRotating(false);
     }
   }
 
@@ -195,6 +223,9 @@ export default function BrokersPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="outline" className="border-border/50 text-muted-foreground font-mono text-xs">{cred.api_key_masked}</Badge>
+                <Button variant="ghost" size="sm" className="rounded-lg hover:text-primary" onClick={() => setRotateTarget(cred)} title={t("brokers.rotateKeys")}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
                 <Button variant="ghost" size="sm" className="rounded-lg hover:text-destructive" onClick={() => handleDelete(cred.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -203,6 +234,38 @@ export default function BrokersPage() {
           ))}
         </div>
       )}
+
+      {/* Rotate Keys Dialog */}
+      <Dialog open={!!rotateTarget} onOpenChange={(open) => { if (!open) setRotateTarget(null); }}>
+        <DialogContent className="glass-strong border-border/30 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("brokers.rotateKeys")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {rotateTarget && t("brokers.rotateDescription", { label: rotateTarget.label })}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRotate} className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">{t("brokers.dialog.apiKeyField")}</Label>
+              <Input value={rotateApiKey} onChange={(e) => setRotateApiKey(e.target.value)} placeholder={t("brokers.rotateKeepExisting")} className="h-10 bg-input/50 border-border/50 rounded-xl" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">{t("brokers.dialog.secretKey")}</Label>
+              <Input type="password" value={rotateSecretKey} onChange={(e) => setRotateSecretKey(e.target.value)} placeholder={t("brokers.rotateKeepExisting")} className="h-10 bg-input/50 border-border/50 rounded-xl" />
+            </div>
+            {rotateTarget?.broker_type === "coinbase" && (
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">{t("brokers.dialog.passphrase")}</Label>
+                <Input type="password" value={rotatePassphrase} onChange={(e) => setRotatePassphrase(e.target.value)} placeholder={t("brokers.rotateKeepExisting")} className="h-10 bg-input/50 border-border/50 rounded-xl" />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">{t("brokers.rotateHint")}</p>
+            <Button type="submit" className="w-full rounded-xl glow-accent" disabled={rotating || (!rotateApiKey && !rotateSecretKey && !rotatePassphrase)}>
+              {rotating ? t("brokers.dialog.saving") : t("brokers.rotateKeys")}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

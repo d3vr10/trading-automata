@@ -73,6 +73,10 @@ def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> tuple[Dict[
             "stop_loss_pct": recovery_item["stop_loss_pct"],
             "take_profit_pct": recovery_item["take_profit_pct"],
             "max_position_size": recovery_item["max_position_size"],
+            "trailing_stop": recovery_item.get("trailing_stop", False),
+            "trailing_stop_pct": recovery_item.get("trailing_stop_pct", 1.5),
+            "trailing_activation_pct": recovery_item.get("trailing_activation_pct", 1.0),
+            "take_profit_targets": recovery_item.get("take_profit_targets") or [],
         },
         "trade_frequency": {
             "poll_interval_minutes": recovery_item["poll_interval_minutes"],

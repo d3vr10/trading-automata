@@ -23,6 +23,7 @@
     "trades": "Operaciones",
     "positions": "Posiciones",
     "analytics": "Análisis",
+    "backtest": "Backtest",
     "account": "Cuenta",
     "settings": "Configuración",
     "brokerKeys": "Claves del Bróker",
@@ -108,6 +109,8 @@
     "deleteConfirmTitle": "Eliminar Bot",
     "deleteConfirmDescription": "¿Eliminar el bot ''{name}''? Se eliminará la configuración permanentemente.",
     "deleteConfirm": "Eliminar",
+    "clone": "Clonar",
+    "botCloned": "Bot ''{name}'' clonado",
     "cancel": "Cancelar",
     "engineOffline": "El motor de trading está desconectado",
     "engineOfflineDescription": "El motor de trading no responde. No se pueden iniciar bots hasta que vuelva a estar en línea.",
@@ -115,6 +118,9 @@
     "statusStarting": "Iniciando...",
     "startTimeout": "El bot no se inició en el tiempo esperado. Revisa los logs del motor.",
     "startFailed": "El bot no pudo iniciarse: {error}",
+    "liveStartTitle": "Iniciar Bot en Modo Real",
+    "liveStartDescription": "Estás a punto de iniciar ''{name}'' en modo REAL. Este bot ejecutará operaciones reales con dinero real. ¿Estás seguro?",
+    "liveStartConfirm": "Iniciar Trading Real",
     "detail": {
       "backToBots": "Volver a Bots",
       "notFound": "Bot no encontrado",
@@ -132,6 +138,9 @@
       "stopLoss": "Stop Loss",
       "takeProfit": "Take Profit",
       "maxPositionSize": "Tamaño Máx. de Posición",
+      "trailingStop": "Stop Dinámico",
+      "activatesAt": "se activa a",
+      "tpTargets": "Objetivos de Toma de Ganancia",
       "activityFeed": "Actividad en Vivo",
       "totalPnl": "P&L Total",
       "winRate": "Tasa de Éxito",
@@ -144,7 +153,22 @@
       "performance": "Rendimiento",
       "maxDrawdown": "Caída Máxima",
       "currentDrawdown": "Caída Actual",
-      "avgHoldingTime": "Tiempo Prom. de Retención"
+      "avgHoldingTime": "Tiempo Prom. de Retención",
+      "annualizedReturn": "Retorno Anualizado",
+      "perYear": "por año",
+      "daysActive": "Días Activo"
+    },
+    "log": {
+      "title": "Registro de Actividad",
+      "signal_generated": "Señal",
+      "trade_executed": "Operación",
+      "cycle_complete": "Ciclo",
+      "error": "Error",
+      "bot_status_changed": "Estado",
+      "clearFilters": "Limpiar",
+      "showing": "{count} de {total} eventos",
+      "noMatchingEvents": "No hay eventos que coincidan con los filtros",
+      "viewFullLog": "Ver registro completo"
     },
     "new": {
       "title": "Crear Bot",
@@ -172,6 +196,7 @@
   "trades": {
     "title": "Historial de Operaciones",
     "noTrades": "Sin operaciones registradas aún",
+    "exportCsv": "Exportar CSV",
     "previous": "Anterior",
     "next": "Siguiente",
     "filters": {
@@ -264,6 +289,15 @@
     "passwordMismatch": "Las contraseñas no coinciden",
     "passwordChanged": "Contraseña cambiada exitosamente",
     "passwordMinLength": "La contraseña debe tener al menos 8 caracteres",
+    "notifications": "Notificaciones",
+    "notificationsDescription": "Configura alertas por email para eventos de bots",
+    "smtpNotConfigured": "SMTP no está configurado. Define las variables SMTP_HOST, SMTP_USER y SMTP_PASS para habilitar notificaciones por email.",
+    "notifyTradeExecuted": "Operación Ejecutada",
+    "notifyTradeExecutedDesc": "Recibe notificación cuando un bot ejecuta una operación",
+    "notifyBotError": "Errores de Bot",
+    "notifyBotErrorDesc": "Recibe notificación cuando un bot tiene un error",
+    "notifyBotStopped": "Cambios de Estado",
+    "notifyBotStoppedDesc": "Recibe notificación cuando un bot inicia, se detiene o cambia de estado",
     "brokers": {
       "title": "Claves API del Bróker",
       "description": "Administra tus credenciales API del bróker. Las claves se encriptan en reposo.",
@@ -277,6 +311,11 @@
       "delete": "Eliminar",
       "credentialSaved": "Credencial guardada",
       "credentialDeleted": "Credencial eliminada",
+      "keysRotated": "Claves API actualizadas correctamente",
+      "rotateKeys": "Rotar Claves",
+      "rotateDescription": "Actualiza las claves API de \"{label}\". Solo completa los campos que deseas cambiar.",
+      "rotateKeepExisting": "Dejar vacío para mantener actual",
+      "rotateHint": "Después de rotar, reinicia los bots que usen esta credencial para aplicar las nuevas claves.",
       "dialog": {
         "title": "Agregar Credenciales del Bróker",
         "brokerType": "Bróker",
@@ -343,6 +382,25 @@
         "deleting": "Eliminando..."
       }
     }
+  },
+  "backtest": {
+    "title": "Backtesting",
+    "strategy": "Estrategia",
+    "symbol": "Símbolo",
+    "days": "Días",
+    "capital": "Capital Inicial",
+    "stopLoss": "Stop Loss %",
+    "takeProfit": "Take Profit %",
+    "trailingStop": "Trailing Stop",
+    "run": "Ejecutar Backtest",
+    "running": "Ejecutando...",
+    "totalReturn": "Retorno Total",
+    "winRate": "Tasa de Éxito",
+    "trades": "Operaciones",
+    "best": "Mejor",
+    "worst": "Peor",
+    "maxDrawdown": "Caída Máxima",
+    "equityCurve": "Curva de Capital"
   },
   "common": {
     "loading": "Cargando...",

@@ -16,9 +16,11 @@ import {
 } from "@/lib/api";
 import { Sparkline } from "@/components/charts/sparkline";
 import { toast } from "sonner";
+import { Link } from "@/i18n/navigation";
 import {
   ArrowLeft, Play, Pause, Square, RefreshCw, Target, BarChart3,
   TrendingUp, TrendingDown, Zap, AlertTriangle, RotateCw, Radio,
+  ExternalLink,
 } from "lucide-react";
 import { StatusCardSkeleton, TableSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -256,6 +258,25 @@ export default function BotDetailPage() {
               <div className="text-xs text-muted-foreground">{t("detail.maxPositionSize")}</div>
               <div className="font-medium mt-1">{(bot.max_position_size * 100).toFixed(0)}%</div>
             </div>
+            {bot.trailing_stop && (
+              <div className="glass-subtle rounded-xl p-3">
+                <div className="text-xs text-muted-foreground">{t("detail.trailingStop")}</div>
+                <div className="font-medium mt-1">{bot.trailing_stop_pct}%</div>
+                <div className="text-[10px] text-muted-foreground">{t("detail.activatesAt")} +{bot.trailing_activation_pct}%</div>
+              </div>
+            )}
+            {bot.take_profit_targets && bot.take_profit_targets.length > 0 && (
+              <div className="glass-subtle rounded-xl p-3 col-span-2">
+                <div className="text-xs text-muted-foreground mb-1">{t("detail.tpTargets")}</div>
+                <div className="flex gap-2 flex-wrap">
+                  {bot.take_profit_targets.map((tp, i) => (
+                    <span key={i} className="text-xs bg-primary/10 text-primary rounded px-2 py-0.5">
+                      +{tp.pct}% → {(tp.quantity_pct * 100).toFixed(0)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -374,6 +395,34 @@ export default function BotDetailPage() {
             </div>
           )}
 
+          {/* Benchmark */}
+          {stats.benchmark && (
+            <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+              <div className="glass rounded-2xl p-4">
+                <div className="text-xs text-muted-foreground">{t("detail.performance")}</div>
+                <div className={`text-xl font-semibold mt-1 ${stats.benchmark.roi_pct >= 0 ? "text-primary" : "text-destructive"}`}>
+                  {stats.benchmark.roi_pct >= 0 ? "+" : ""}{stats.benchmark.roi_pct}%
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">ROI</div>
+              </div>
+              <div className="glass rounded-2xl p-4">
+                <div className="text-xs text-muted-foreground">{t("detail.annualizedReturn")}</div>
+                <div className={`text-xl font-semibold mt-1 ${stats.benchmark.annualized_return_pct >= 0 ? "text-primary" : "text-destructive"}`}>
+                  {stats.benchmark.annualized_return_pct >= 0 ? "+" : ""}{stats.benchmark.annualized_return_pct}%
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{t("detail.perYear")}</div>
+              </div>
+              <div className="glass rounded-2xl p-4">
+                <div className="text-xs text-muted-foreground">{t("detail.daysActive")}</div>
+                <div className="text-xl font-semibold mt-1">{stats.benchmark.days_active}</div>
+              </div>
+              <div className="glass rounded-2xl p-4">
+                <div className="text-xs text-muted-foreground">{t("allocation")}</div>
+                <div className="text-xl font-semibold mt-1">${stats.benchmark.allocation.toFixed(2)}</div>
+              </div>
+            </div>
+          )}
+
           {/* Mini Equity Curve */}
           {stats.equity_curve.length >= 2 && (
             <div className="glass rounded-2xl overflow-hidden">
@@ -406,14 +455,22 @@ export default function BotDetailPage() {
               </span>
             )}
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="rounded-lg h-7 w-7 p-0"
-            onClick={load}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Link
+              href={`/dashboard/bots/${botId}/log`}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              {t("log.viewFullLog")} <ExternalLink className="h-3 w-3" />
+            </Link>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="rounded-lg h-7 w-7 p-0"
+              onClick={load}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
         <div className="max-h-80 overflow-y-auto">
           {events.length === 0 ? (

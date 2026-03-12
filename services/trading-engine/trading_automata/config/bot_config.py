@@ -71,6 +71,12 @@ class FenceConfig(BaseModel):
         return v
 
 
+class TakeProfitTarget(BaseModel):
+    """A single take-profit target for partial exits."""
+    pct: float = Field(..., description="Profit percentage at which to trigger this exit")
+    quantity_pct: float = Field(..., description="Fraction of position to sell (0-1)")
+
+
 class RiskConfig(BaseModel):
     """Risk management configuration per bot."""
 
@@ -78,6 +84,17 @@ class RiskConfig(BaseModel):
     take_profit_pct: float = Field(default=6.0, description="Take profit percentage per trade")
     max_position_size: float = Field(default=0.1, description="Max position size as % of allocation")
     max_portfolio_risk: float = Field(default=0.02, description="Max portfolio risk as % of allocation")
+
+    # Trailing stop loss
+    trailing_stop: bool = Field(default=False, description="Enable trailing stop loss")
+    trailing_stop_pct: float = Field(default=1.5, description="Trailing distance as % below highest price")
+    trailing_activation_pct: float = Field(default=1.0, description="Min profit % before trailing activates")
+
+    # Multiple take-profit targets (optional, overrides take_profit_pct)
+    take_profit_targets: list[TakeProfitTarget] = Field(
+        default_factory=list,
+        description="Multiple TP targets with partial exits. If empty, uses take_profit_pct for full exit.",
+    )
 
     @field_validator('stop_loss_pct', 'take_profit_pct', 'max_position_size', 'max_portfolio_risk')
     @classmethod
@@ -94,6 +111,17 @@ class RiskConfig(BaseModel):
         if 'stop_loss_pct' in info.data and v <= info.data['stop_loss_pct']:
             raise ValueError(f"take_profit_pct ({v}) must be > stop_loss_pct ({info.data['stop_loss_pct']})")
         return v
+
+    @field_validator('take_profit_targets')
+    @classmethod
+    def validate_tp_targets(cls, v):
+        """Ensure TP targets sum to <= 100% and are sorted."""
+        if not v:
+            return v
+        total = sum(t.quantity_pct for t in v)
+        if total > 1.0:
+            raise ValueError(f"TP targets quantity_pct sum ({total}) exceeds 1.0")
+        return sorted(v, key=lambda t: t.pct)
 
 
 class TradeFrequencyConfig(BaseModel):

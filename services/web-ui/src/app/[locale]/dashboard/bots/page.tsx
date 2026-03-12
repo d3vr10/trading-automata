@@ -7,14 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   listBots, getBotStatus, getEngineHealth, startBot, pauseBot, resumeBot,
-  stopBot, deleteBot, type BotConfig,
+  stopBot, deleteBot, cloneBot, type BotConfig,
 } from "@/lib/api";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Play, Pause, Square, Plus, Trash2, Loader2, AlertTriangle, Wifi, WifiOff } from "lucide-react";
+import { Play, Pause, Square, Plus, Trash2, Copy, Loader2, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import { BotCardSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWebSocket, type WsEvent } from "@/hooks/use-websocket";
@@ -30,6 +30,7 @@ export default function BotsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<BotConfig | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [liveStartTarget, setLiveStartTarget] = useState<BotConfig | null>(null);
   const [engineOnline, setEngineOnline] = useState<boolean | null>(null);
   // Track pending actions per bot: { botId: "start" | "pause" | "resume" | "stop" }
   const [pendingActions, setPendingActions] = useState<Record<number, PendingAction>>({});
@@ -141,6 +142,15 @@ export default function BotsPage() {
   }
 
   async function handleAction(bot: BotConfig, action: PendingAction) {
+    // Gate live bot starts behind confirmation dialog
+    if (action === "start" && bot.environment === "live") {
+      setLiveStartTarget(bot);
+      return;
+    }
+    await executeAction(bot, action);
+  }
+
+  async function executeAction(bot: BotConfig, action: PendingAction) {
     // Optimistic UI: immediately show expected state
     setPending(bot.id, action);
     try {
@@ -175,6 +185,16 @@ export default function BotsPage() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleClone(bot: BotConfig) {
+    try {
+      const cloned = await cloneBot(bot.id);
+      toast.success(t("botCloned", { name: cloned.name }));
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clone bot");
     }
   }
 
@@ -270,15 +290,29 @@ export default function BotsPage() {
               );
             }
 
+            const isLive = bot.environment === "live";
+
             return (
-              <div key={bot.id} className="glass rounded-2xl overflow-hidden">
+              <div key={bot.id} className={`glass rounded-2xl overflow-hidden ${isLive ? "ring-1 ring-amber-500/20" : ""}`}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
-                  <Link
-                    href={`/dashboard/bots/${bot.id}`}
-                    className="text-base font-semibold hover:text-primary transition-colors"
-                  >
-                    {bot.name}
-                  </Link>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Link
+                      href={`/dashboard/bots/${bot.id}`}
+                      className="text-base font-semibold hover:text-primary transition-colors truncate"
+                    >
+                      {bot.name}
+                    </Link>
+                    <Badge
+                      variant="outline"
+                      className={`text-[9px] px-1.5 py-0 shrink-0 ${
+                        isLive
+                          ? "border-amber-500/50 text-amber-400 bg-amber-500/10"
+                          : "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
+                      }`}
+                    >
+                      {isLive ? "LIVE" : "PAPER"}
+                    </Badge>
+                  </div>
                   {badge}
                 </div>
                 <div className="p-5 space-y-4">
@@ -350,11 +384,16 @@ export default function BotsPage() {
                             <Square className="mr-1 h-3.5 w-3.5" /> {t("stop")}
                           </Button>
                         )}
-                        {isStopped && (
-                          <Button size="sm" variant="ghost" className="rounded-lg hover:text-destructive ml-auto" onClick={() => setDeleteTarget(bot)}>
-                            <Trash2 className="h-4 w-4" />
+                        <div className="flex gap-1 ml-auto">
+                          <Button size="sm" variant="ghost" className="rounded-lg" onClick={() => handleClone(bot)} title={t("clone")}>
+                            <Copy className="h-4 w-4" />
                           </Button>
-                        )}
+                          {isStopped && (
+                            <Button size="sm" variant="ghost" className="rounded-lg hover:text-destructive" onClick={() => setDeleteTarget(bot)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -382,6 +421,35 @@ export default function BotsPage() {
               onClick={handleDelete}
             >
               {t("deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Live Mode Start Confirmation */}
+      <AlertDialog open={!!liveStartTarget} onOpenChange={(open) => { if (!open) setLiveStartTarget(null); }}>
+        <AlertDialogContent className="glass-strong border-border/30 rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              {t("liveStartTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-amber-200/80">
+              {liveStartTarget && t("liveStartDescription", { name: liveStartTarget.name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                if (liveStartTarget) {
+                  executeAction(liveStartTarget, "start");
+                  setLiveStartTarget(null);
+                }
+              }}
+            >
+              {t("liveStartConfirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

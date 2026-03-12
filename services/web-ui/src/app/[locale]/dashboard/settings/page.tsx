@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
-import { changePassword } from "@/lib/api";
+import {
+  changePassword, getNotificationPrefs, updateNotificationPref,
+  getNotificationStatus, type NotificationPrefs,
+} from "@/lib/api";
 import { toast } from "sonner";
+import { Bell, Mail } from "lucide-react";
 
 export default function SettingsPage() {
   const t = useTranslations("settings");
@@ -16,6 +21,31 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [smtpConfigured, setSmtpConfigured] = useState<boolean | null>(null);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
+
+  const loadNotifPrefs = useCallback(async () => {
+    const [status, prefs] = await Promise.all([
+      getNotificationStatus().catch(() => ({ smtp_configured: false })),
+      getNotificationPrefs().catch(() => null),
+    ]);
+    setSmtpConfigured(status.smtp_configured);
+    setNotifPrefs(prefs);
+  }, []);
+
+  useEffect(() => { loadNotifPrefs(); }, [loadNotifPrefs]);
+
+  async function handleTogglePref(key: keyof NotificationPrefs) {
+    if (!notifPrefs) return;
+    const newValue = !notifPrefs[key];
+    setNotifPrefs({ ...notifPrefs, [key]: newValue });
+    try {
+      await updateNotificationPref(key, newValue);
+    } catch {
+      setNotifPrefs({ ...notifPrefs, [key]: !newValue });
+      toast.error("Failed to update preference");
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -67,6 +97,62 @@ export default function SettingsPage() {
             <span className="text-muted-foreground">{t("role")}</span>
             <span className="font-medium capitalize">{user?.role}</span>
           </div>
+        </div>
+      </div>
+
+      {/* Notifications card */}
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/30">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            <h2 className="font-semibold">{t("notifications")}</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">{t("notificationsDescription")}</p>
+        </div>
+        <div className="p-5 space-y-4">
+          {smtpConfigured === false && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300 flex items-center gap-2">
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              {t("smtpNotConfigured")}
+            </div>
+          )}
+          {notifPrefs && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl glass-subtle p-3">
+                <div>
+                  <div className="text-sm font-medium">{t("notifyTradeExecuted")}</div>
+                  <div className="text-xs text-muted-foreground">{t("notifyTradeExecutedDesc")}</div>
+                </div>
+                <Switch
+                  checked={notifPrefs.notify_trade_executed}
+                  onCheckedChange={() => handleTogglePref("notify_trade_executed")}
+                  disabled={!smtpConfigured}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-xl glass-subtle p-3">
+                <div>
+                  <div className="text-sm font-medium">{t("notifyBotError")}</div>
+                  <div className="text-xs text-muted-foreground">{t("notifyBotErrorDesc")}</div>
+                </div>
+                <Switch
+                  checked={notifPrefs.notify_bot_error}
+                  onCheckedChange={() => handleTogglePref("notify_bot_error")}
+                  disabled={!smtpConfigured}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-xl glass-subtle p-3">
+                <div>
+                  <div className="text-sm font-medium">{t("notifyBotStopped")}</div>
+                  <div className="text-xs text-muted-foreground">{t("notifyBotStoppedDesc")}</div>
+                </div>
+                <Switch
+                  checked={notifPrefs.notify_bot_stopped}
+                  onCheckedChange={() => handleTogglePref("notify_bot_stopped")}
+                  disabled={!smtpConfigured}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

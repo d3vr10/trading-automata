@@ -1,9 +1,12 @@
 """Trade, position, and metrics query routes."""
 
+import csv
+import io
 from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +100,45 @@ async def list_trades(
         symbol=symbol, strategy=strategy, bot_name=bot_name,
         date_from=_parse_date(date_from), date_to=_parse_date(date_to),
         limit=limit, offset=offset,
+    )
+
+
+@router.get("/trades/export")
+async def export_trades_csv(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    symbol: Optional[str] = None,
+    strategy: Optional[str] = None,
+    bot_name: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """Export all matching trades as CSV."""
+    trades = await trade_service.list_trades(
+        db, current_user.id,
+        symbol=symbol, strategy=strategy, bot_name=bot_name,
+        date_from=_parse_date(date_from), date_to=_parse_date(date_to),
+        limit=10000, offset=0,
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "ID", "Symbol", "Strategy", "Broker", "Bot", "Entry Price",
+        "Entry Qty", "Entry Time", "Exit Price", "Exit Time",
+        "Gross P&L", "Net P&L", "P&L %", "Win",
+    ])
+    for t in trades:
+        writer.writerow([
+            t.id, t.symbol, t.strategy, t.broker, t.bot_name,
+            t.entry_price, t.entry_quantity, t.entry_timestamp,
+            t.exit_price, t.exit_timestamp,
+            t.gross_pnl, t.net_pnl, t.pnl_percent, t.is_winning_trade,
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=trades.csv"},
     )
 
 

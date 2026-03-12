@@ -19,6 +19,11 @@ router = APIRouter(prefix="/api/bots", tags=["bots"])
 
 # ---- Schemas ----
 
+class TakeProfitTarget(BaseModel):
+    pct: float = Field(..., gt=0)
+    quantity_pct: float = Field(..., gt=0, le=1)
+
+
 class BotConfigResponse(BaseModel):
     id: int
     name: str
@@ -33,6 +38,10 @@ class BotConfigResponse(BaseModel):
     take_profit_pct: float
     max_position_size: float
     poll_interval_minutes: int
+    trailing_stop: bool
+    trailing_stop_pct: float
+    trailing_activation_pct: float
+    take_profit_targets: Optional[list[TakeProfitTarget]]
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -49,6 +58,10 @@ class CreateBotRequest(BaseModel):
     take_profit_pct: float = Field(default=6.0, gt=0)
     max_position_size: float = Field(default=0.1, gt=0)
     poll_interval_minutes: int = Field(default=1, ge=1)
+    trailing_stop: bool = False
+    trailing_stop_pct: float = Field(default=1.5, gt=0)
+    trailing_activation_pct: float = Field(default=1.0, ge=0)
+    take_profit_targets: Optional[list[TakeProfitTarget]] = None
 
 
 class UpdateBotRequest(BaseModel):
@@ -61,6 +74,10 @@ class UpdateBotRequest(BaseModel):
     take_profit_pct: Optional[float] = Field(default=None, gt=0)
     max_position_size: Optional[float] = Field(default=None, gt=0)
     poll_interval_minutes: Optional[int] = Field(default=None, ge=1)
+    trailing_stop: Optional[bool] = None
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0)
+    trailing_activation_pct: Optional[float] = Field(default=None, ge=0)
+    take_profit_targets: Optional[list[TakeProfitTarget]] = None
 
 
 class BotCommandResponse(BaseModel):
@@ -79,6 +96,9 @@ async def get_redis() -> aioredis.Redis:
 # ---- Helpers ----
 
 def _to_response(bot: BotConfiguration, cred: BrokerCredential) -> BotConfigResponse:
+    tp_targets = None
+    if bot.take_profit_targets:
+        tp_targets = [TakeProfitTarget(**t) for t in bot.take_profit_targets]
     return BotConfigResponse(
         id=bot.id,
         name=bot.name,
@@ -93,6 +113,10 @@ def _to_response(bot: BotConfiguration, cred: BrokerCredential) -> BotConfigResp
         take_profit_pct=bot.take_profit_pct,
         max_position_size=bot.max_position_size,
         poll_interval_minutes=bot.poll_interval_minutes,
+        trailing_stop=bot.trailing_stop,
+        trailing_stop_pct=bot.trailing_stop_pct,
+        trailing_activation_pct=bot.trailing_activation_pct,
+        take_profit_targets=tp_targets,
         is_active=bot.is_active,
     )
 
@@ -157,6 +181,7 @@ async def create_bot(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Bot name already exists")
 
+    tp_targets = [t.model_dump() for t in body.take_profit_targets] if body.take_profit_targets else None
     bot = BotConfiguration(
         user_id=current_user.id,
         name=body.name,
@@ -169,6 +194,10 @@ async def create_bot(
         take_profit_pct=body.take_profit_pct,
         max_position_size=body.max_position_size,
         poll_interval_minutes=body.poll_interval_minutes,
+        trailing_stop=body.trailing_stop,
+        trailing_stop_pct=body.trailing_stop_pct,
+        trailing_activation_pct=body.trailing_activation_pct,
+        take_profit_targets=tp_targets,
     )
     db.add(bot)
     await db.commit()
@@ -247,6 +276,58 @@ async def delete_bot(
     await db.commit()
 
 
+@router.post("/{bot_id}/clone", response_model=BotConfigResponse, status_code=status.HTTP_201_CREATED)
+async def clone_bot(
+    bot_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Clone a bot configuration with a unique name."""
+    source = await _get_bot_or_404(db, bot_id, current_user.id)
+
+    # Generate unique name
+    base_name = f"{source.name}-copy"
+    name = base_name
+    counter = 1
+    while True:
+        existing = await db.execute(
+            select(BotConfiguration).where(
+                BotConfiguration.user_id == current_user.id,
+                BotConfiguration.name == name,
+            )
+        )
+        if not existing.scalar_one_or_none():
+            break
+        counter += 1
+        name = f"{base_name}-{counter}"
+
+    clone = BotConfiguration(
+        user_id=current_user.id,
+        name=name,
+        strategy_id=source.strategy_id,
+        credential_id=source.credential_id,
+        allocation=source.allocation,
+        fence_type=source.fence_type,
+        fence_overage_pct=source.fence_overage_pct,
+        stop_loss_pct=source.stop_loss_pct,
+        take_profit_pct=source.take_profit_pct,
+        max_position_size=source.max_position_size,
+        poll_interval_minutes=source.poll_interval_minutes,
+        trailing_stop=source.trailing_stop,
+        trailing_stop_pct=source.trailing_stop_pct,
+        trailing_activation_pct=source.trailing_activation_pct,
+        take_profit_targets=source.take_profit_targets,
+    )
+    db.add(clone)
+    await db.commit()
+    await db.refresh(clone)
+    cred_result = await db.execute(
+        select(BrokerCredential).where(BrokerCredential.id == clone.credential_id)
+    )
+    cred = cred_result.scalar_one()
+    return _to_response(clone, cred)
+
+
 # ---- Recovery (internal use by engine) ----
 
 class BotRecoveryItem(BaseModel):
@@ -268,6 +349,10 @@ class BotRecoveryItem(BaseModel):
     take_profit_pct: float
     max_position_size: float
     poll_interval_minutes: int
+    trailing_stop: bool = False
+    trailing_stop_pct: float = 1.5
+    trailing_activation_pct: float = 1.0
+    take_profit_targets: Optional[list[dict]] = None
 
 
 @router.get("/recovery/pending", response_model=list[BotRecoveryItem])
@@ -307,6 +392,10 @@ async def get_recovery_pending(
             take_profit_pct=bot.take_profit_pct,
             max_position_size=bot.max_position_size,
             poll_interval_minutes=bot.poll_interval_minutes,
+            trailing_stop=bot.trailing_stop,
+            trailing_stop_pct=bot.trailing_stop_pct,
+            trailing_activation_pct=bot.trailing_activation_pct,
+            take_profit_targets=bot.take_profit_targets,
         ))
 
     return items
@@ -456,6 +545,46 @@ async def get_bot_events(
     """Get recent activity events for a bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
     return await bot_service.get_bot_events(redis_client, current_user.id, bot.name, limit)
+
+
+class BacktestRequest(BaseModel):
+    strategy_id: str
+    symbol: str
+    days: int = Field(default=90, le=365)
+    initial_capital: float = Field(default=10000)
+    stop_loss_pct: float = Field(default=2.0)
+    take_profit_pct: float = Field(default=6.0)
+    trailing_stop: bool = False
+
+
+@router.post("/backtest")
+async def run_backtest(
+    body: BacktestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Run a backtest via the trading engine."""
+    import uuid
+    request_id = str(uuid.uuid4())
+    command = {
+        "action": "run_backtest",
+        "request_id": request_id,
+        "user_id": current_user.id,
+        "strategy_id": body.strategy_id,
+        "symbol": body.symbol,
+        "days": body.days,
+        "initial_capital": body.initial_capital,
+        "stop_loss_pct": body.stop_loss_pct,
+        "take_profit_pct": body.take_profit_pct,
+        "trailing_stop": body.trailing_stop,
+    }
+    try:
+        result = await bot_service.send_command_and_wait(redis_client, command, timeout=120)
+        return result
+    except TimeoutError:
+        raise HTTPException(504, "Backtest timed out")
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @router.post("/{bot_id}/start", response_model=BotCommandResponse)

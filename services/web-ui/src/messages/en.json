@@ -23,6 +23,7 @@
     "trades": "Trades",
     "positions": "Positions",
     "analytics": "Analytics",
+    "backtest": "Backtest",
     "account": "Account",
     "settings": "Settings",
     "brokerKeys": "Broker Keys",
@@ -108,6 +109,8 @@
     "deleteConfirmTitle": "Delete Bot",
     "deleteConfirmDescription": "Delete bot ''{name}''? This will remove the configuration permanently.",
     "deleteConfirm": "Delete",
+    "clone": "Clone",
+    "botCloned": "Bot ''{name}'' cloned",
     "cancel": "Cancel",
     "engineOffline": "Trading engine is offline",
     "engineOfflineDescription": "The trading engine is not responding. Bots cannot be started until it is back online.",
@@ -115,6 +118,9 @@
     "statusStarting": "Starting...",
     "startTimeout": "Bot did not start within the expected time. Check engine logs for details.",
     "startFailed": "Bot failed to start: {error}",
+    "liveStartTitle": "Start Live Trading Bot",
+    "liveStartDescription": "You are about to start ''{name}'' in LIVE mode. This bot will execute real trades with real money. Are you sure?",
+    "liveStartConfirm": "Start Live Trading",
     "detail": {
       "backToBots": "Back to Bots",
       "notFound": "Bot not found",
@@ -132,6 +138,9 @@
       "stopLoss": "Stop Loss",
       "takeProfit": "Take Profit",
       "maxPositionSize": "Max Position Size",
+      "trailingStop": "Trailing Stop",
+      "activatesAt": "activates at",
+      "tpTargets": "Take Profit Targets",
       "activityFeed": "Activity Feed",
       "totalPnl": "Total P&L",
       "winRate": "Win Rate",
@@ -144,7 +153,22 @@
       "performance": "Performance",
       "maxDrawdown": "Max Drawdown",
       "currentDrawdown": "Current Drawdown",
-      "avgHoldingTime": "Avg Holding Time"
+      "avgHoldingTime": "Avg Holding Time",
+      "annualizedReturn": "Annualized Return",
+      "perYear": "per year",
+      "daysActive": "Days Active"
+    },
+    "log": {
+      "title": "Activity Log",
+      "signal_generated": "Signal",
+      "trade_executed": "Trade",
+      "cycle_complete": "Cycle",
+      "error": "Error",
+      "bot_status_changed": "Status",
+      "clearFilters": "Clear",
+      "showing": "{count} of {total} events",
+      "noMatchingEvents": "No events match the selected filters",
+      "viewFullLog": "View full log"
     },
     "new": {
       "title": "Create Bot",
@@ -172,6 +196,7 @@
   "trades": {
     "title": "Trade History",
     "noTrades": "No trades recorded yet",
+    "exportCsv": "Export CSV",
     "previous": "Previous",
     "next": "Next",
     "filters": {
@@ -264,6 +289,15 @@
     "passwordMismatch": "Passwords do not match",
     "passwordChanged": "Password changed successfully",
     "passwordMinLength": "Password must be at least 8 characters",
+    "notifications": "Notifications",
+    "notificationsDescription": "Configure email alerts for bot events",
+    "smtpNotConfigured": "SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables to enable email notifications.",
+    "notifyTradeExecuted": "Trade Executed",
+    "notifyTradeExecutedDesc": "Get notified when a bot executes a trade",
+    "notifyBotError": "Bot Errors",
+    "notifyBotErrorDesc": "Get notified when a bot encounters an error",
+    "notifyBotStopped": "Bot Status Changes",
+    "notifyBotStoppedDesc": "Get notified when a bot starts, stops, or changes state",
     "brokers": {
       "title": "Broker API Keys",
       "description": "Manage your broker API credentials. Keys are encrypted at rest.",
@@ -277,6 +311,11 @@
       "delete": "Delete",
       "credentialSaved": "Credential saved",
       "credentialDeleted": "Credential deleted",
+      "keysRotated": "API keys updated successfully",
+      "rotateKeys": "Rotate Keys",
+      "rotateDescription": "Update the API keys for \"{label}\". Only fill in the fields you want to change.",
+      "rotateKeepExisting": "Leave blank to keep current",
+      "rotateHint": "After rotating, restart any bots using this credential to apply the new keys.",
       "dialog": {
         "title": "Add Broker Credentials",
         "brokerType": "Broker",
@@ -343,6 +382,25 @@
         "deleting": "Deleting..."
       }
     }
+  },
+  "backtest": {
+    "title": "Backtesting",
+    "strategy": "Strategy",
+    "symbol": "Symbol",
+    "days": "Days",
+    "capital": "Initial Capital",
+    "stopLoss": "Stop Loss %",
+    "takeProfit": "Take Profit %",
+    "trailingStop": "Trailing Stop",
+    "run": "Run Backtest",
+    "running": "Running...",
+    "totalReturn": "Total Return",
+    "winRate": "Win Rate",
+    "trades": "Trades",
+    "best": "Best",
+    "worst": "Worst",
+    "maxDrawdown": "Max Drawdown",
+    "equityCurve": "Equity Curve"
   },
   "common": {
     "loading": "Loading...",

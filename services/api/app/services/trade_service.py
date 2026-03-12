@@ -222,7 +222,7 @@ async def get_bot_stats(db: AsyncSession, user_id: int, bot_name: str) -> dict:
     row = result.one()
     total = row.total_trades or 0
     winning = row.winning_trades or 0
-    return {
+    stats: dict = {
         "total_trades": total,
         "total_pnl": float(row.total_pnl or 0),
         "winning_trades": winning,
@@ -231,6 +231,36 @@ async def get_bot_stats(db: AsyncSession, user_id: int, bot_name: str) -> dict:
         "worst_trade": float(row.worst_trade or 0),
         "avg_pnl_percent": round(float(row.avg_pnl_percent or 0), 2),
     }
+
+    # Benchmark: ROI and annualized return based on allocation + trading period
+    if total > 0:
+        from app.models import BotConfiguration
+        date_result = await db.execute(
+            select(
+                func.min(Trade.entry_timestamp).label("first_trade"),
+                func.max(Trade.exit_timestamp).label("last_trade"),
+            ).where(Trade.user_id == user_id, Trade.bot_name == bot_name)
+        )
+        dates = date_result.one()
+        bot_result = await db.execute(
+            select(BotConfiguration.allocation).where(
+                BotConfiguration.user_id == user_id,
+                BotConfiguration.name == bot_name,
+            )
+        )
+        allocation = bot_result.scalar()
+        if allocation and allocation > 0 and dates.first_trade and dates.last_trade:
+            roi = stats["total_pnl"] / float(allocation) * 100
+            days_active = max((dates.last_trade - dates.first_trade).total_seconds() / 86400, 1)
+            annualized = roi * (365 / days_active) if days_active >= 1 else roi
+            stats["benchmark"] = {
+                "allocation": float(allocation),
+                "roi_pct": round(roi, 2),
+                "days_active": round(days_active, 1),
+                "annualized_return_pct": round(annualized, 2),
+            }
+
+    return stats
 
 
 async def get_bot_equity_curve(

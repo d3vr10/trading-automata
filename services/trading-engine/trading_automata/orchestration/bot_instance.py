@@ -34,6 +34,7 @@ from trading_automata.metrics import (
     engine_trades_executed_total,
 )
 from trading_automata.commands.publisher import EventPublisher
+from trading_automata.risk.position_tracker import PositionTracker
 from trading_automata.utils.exceptions import TradingBotError
 from trading_automata.utils.strategy_warmer import warm_up_all_strategies
 
@@ -93,6 +94,7 @@ class BotInstance:
         self.data_provider: Optional[AlpacaDataProvider] = None
         self.order_manager: Optional[OrderManager] = None
         self.portfolio_manager: Optional[VirtualPortfolioManager] = None
+        self.position_tracker: PositionTracker = PositionTracker(config.risk)
         self.strategies: List[BaseStrategy] = []
 
         # State
@@ -215,9 +217,9 @@ class BotInstance:
                     bot_name=self.bot_name,
                 )
 
-            # Warm up strategies
-            self.logger.debug(f"Warming up strategies...")
-            warm_up_all_strategies(self.strategies)
+            # Warm up strategies using bot's own data provider
+            self.logger.info(f"Warming up strategies with historical data...")
+            warm_up_all_strategies(self.strategies, data_provider=self.data_provider)
 
             # Log monitored symbols
             symbols = set()
@@ -380,6 +382,30 @@ class BotInstance:
             bot_name=self.bot_name,
         )
 
+        # Evaluate SL/TP for tracked positions before strategy signals
+        if not self._paused:
+            exit_signal = self.position_tracker.evaluate(bar.symbol, bar.close)
+            if exit_signal:
+                order_id = self.portfolio_manager.execute_signal_if_valid(exit_signal)
+                if order_id:
+                    reason = exit_signal.metadata.get("reason", "sl_tp")
+                    engine_trades_executed_total.labels(
+                        bot_name=self.bot_name,
+                        broker=self.config.broker.type,
+                    ).inc()
+                    if self._event_publisher:
+                        await self._event_publisher.publish_trade_executed(
+                            self.bot_name, {
+                                "symbol": exit_signal.symbol,
+                                "strategy": f"risk_mgmt:{reason}",
+                                "action": "sell",
+                                "quantity": float(exit_signal.quantity),
+                                "price": float(bar.close),
+                                "order_id": order_id,
+                                "reason": reason,
+                            }, user_id=self._user_id,
+                        )
+
         # Get signals from all strategies
         for strategy in self.strategies:
             if bar.symbol not in strategy.config.get('symbols', []):
@@ -424,6 +450,14 @@ class BotInstance:
                                 broker=self.config.broker.type,
                             ).inc()
                             await self._record_trade_entry(strategy, signal, order_id)
+
+                            # Track position for SL/TP enforcement
+                            if signal.action.lower() == 'buy' and signal.quantity:
+                                self.position_tracker.open_position(
+                                    signal.symbol, bar.close, signal.quantity,
+                                )
+                            elif signal.action.lower() == 'sell':
+                                self.position_tracker.close_position(signal.symbol)
 
                             # Publish trade to Redis for UI
                             if self._event_publisher:

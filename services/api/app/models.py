@@ -7,7 +7,7 @@ is defined in the Alembic migrations (shared/alembic/versions/).
 from datetime import datetime, UTC
 
 from sqlalchemy import (
-    Boolean, Column, Date, DateTime, Float, Integer, Numeric, String, Text,
+    Boolean, Column, Date, DateTime, Float, Integer, JSON, Numeric, String, Text,
     ForeignKey, UniqueConstraint, func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -65,6 +65,10 @@ class BotConfiguration(Base):
     take_profit_pct = Column(Float, nullable=False, server_default="6.0")
     max_position_size = Column(Float, nullable=False, server_default="0.1")
     poll_interval_minutes = Column(Integer, nullable=False, server_default="1")
+    trailing_stop = Column(Boolean, nullable=False, server_default="false")
+    trailing_stop_pct = Column(Float, nullable=False, server_default="1.5")
+    trailing_activation_pct = Column(Float, nullable=False, server_default="1.0")
+    take_profit_targets = Column(JSON, nullable=True)  # [{"pct": 3.0, "quantity_pct": 0.5}, ...]
     is_active = Column(Boolean, server_default="false")
     desired_state = Column(String(20), nullable=False, server_default="stopped")  # stopped, running, paused
     created_at = Column(DateTime, server_default=func.now())

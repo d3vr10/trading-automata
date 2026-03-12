@@ -7,6 +7,7 @@ import {
   Wallet,
   BarChart3,
   Blocks,
+  FlaskConical,
   Settings,
   KeyRound,
   Users,
@@ -43,6 +44,7 @@ export function AppSidebar() {
     { title: t("trades"), href: "/dashboard/trades" as const, icon: ArrowLeftRight },
     { title: t("positions"), href: "/dashboard/positions" as const, icon: Wallet },
     { title: t("analytics"), href: "/dashboard/metrics" as const, icon: BarChart3 },
+    { title: t("backtest"), href: "/dashboard/backtest" as const, icon: FlaskConical },
   ];
 
   const settingsNav = [

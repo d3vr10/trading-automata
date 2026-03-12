@@ -8,8 +8,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listTrades, type Trade } from "@/lib/api";
+import { listTrades, exportTradesCsv, type Trade } from "@/lib/api";
 import { TableSkeleton } from "@/components/skeletons";
+import { Download } from "lucide-react";
 
 export default function TradesPage() {
   const t = useTranslations("trades");
@@ -79,6 +80,17 @@ export default function TradesPage() {
             {t("filters.clear")}
           </Button>
         )}
+        <div className="ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg h-8 text-xs"
+            onClick={() => exportTradesCsv({ date_from: dateFrom || undefined, date_to: dateTo || undefined })}
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            {t("exportCsv")}
+          </Button>
+        </div>
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
