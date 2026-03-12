@@ -1,8 +1,11 @@
 """Broker credential management routes."""
 
+import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,6 +101,10 @@ async def create_credential(
     )
     await db.commit()
     await db.refresh(cred)
+    logger.info(
+        "User %d created credential '%s' (id=%d, broker=%s/%s)",
+        current_user.id, body.label, cred.id, body.broker_type, body.environment,
+    )
     return CredentialResponse(
         id=cred.id,
         broker_type=cred.broker_type,
@@ -148,6 +155,10 @@ async def update_credential(
     )
     await db.commit()
     await db.refresh(cred)
+    logger.info(
+        "User %d rotated credential '%s' (id=%d, fields=%s)",
+        current_user.id, cred.label, cred.id, changed_fields,
+    )
     return CredentialResponse(
         id=cred.id,
         broker_type=cred.broker_type,
@@ -180,6 +191,10 @@ async def delete_credential(
         cred.id, cred.label,
         details={"broker_type": cred.broker_type},
         ip_address=request.client.host if request.client else None,
+    )
+    logger.info(
+        "User %d deleted credential '%s' (id=%d, broker=%s)",
+        current_user.id, cred.label, cred.id, cred.broker_type,
     )
     await db.delete(cred)
     await db.commit()

@@ -1,11 +1,14 @@
 """Authentication routes: login, refresh, password reset."""
 
+import logging
 from datetime import datetime, timedelta, UTC
 from typing import Annotated
 
 import os
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +62,7 @@ async def login(
 
     if not user or not verify_password(body.password, user.password_hash):
         auth_attempts_total.labels(status="failure", client_ip=client_ip).inc()
+        logger.warning("Login failed for username '%s' from %s", body.username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -66,12 +70,14 @@ async def login(
 
     if not user.is_active:
         auth_attempts_total.labels(status="failure", client_ip=client_ip).inc()
+        logger.warning("Login attempt for disabled account '%s' from %s", body.username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
 
     auth_attempts_total.labels(status="success", client_ip=client_ip).inc()
+    logger.info("User '%s' logged in from %s", user.username, client_ip)
 
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
@@ -146,4 +152,5 @@ async def change_password(
 
     current_user.password_hash = hash_password(body.new_password)
     await db.commit()
+    logger.info("User %d changed their password", current_user.id)
     return {"message": "Password changed successfully"}

@@ -644,7 +644,7 @@ async def start_bot(
     bot.desired_state = "running"
     await log_action(db, current_user.id, "start_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
-    logger.info("Start command sent for bot '%s', desired_state='running'", bot.name)
+    logger.debug("Start command sent for bot '%s', desired_state='running'", bot.name)
 
     return BotCommandResponse(bot_name=bot.name, action="start", status="command_sent")
 

@@ -64,7 +64,7 @@ async def websocket_endpoint(
         _connections[user.id] = set()
     _connections[user.id].add(websocket)
     ws_connections_active.inc()
-    logger.info(f"WebSocket connected: user={user.username} (total={sum(len(s) for s in _connections.values())})")
+    logger.debug(f"WebSocket connected: user={user.username} (total={sum(len(s) for s in _connections.values())})")
 
     try:
         # Keep alive — listen for client messages (ping/pong handled by protocol)
@@ -78,7 +78,7 @@ async def websocket_endpoint(
         if not _connections[user.id]:
             del _connections[user.id]
         ws_connections_active.dec()
-        logger.info(f"WebSocket disconnected: user={user.username}")
+        logger.debug(f"WebSocket disconnected: user={user.username}")
 
 
 async def broadcast_event(event_data: dict) -> None:
