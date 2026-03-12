@@ -107,6 +107,22 @@ credential_decryptions_total = Counter(
     ["broker_type"],
 )
 
+credential_operations_total = Counter(
+    "credential_operations_total",
+    "Credential CRUD operations",
+    ["operation"],  # create, rotate, delete
+)
+
+# ──────────────────────────────────────────────
+# Bot Lifecycle
+# ──────────────────────────────────────────────
+
+bot_commands_total = Counter(
+    "bot_commands_total",
+    "Bot lifecycle commands sent to engine",
+    ["action", "broker_type"],
+)
+
 
 def _normalize_path(path: str) -> str:
     """Normalize URL path to reduce cardinality.

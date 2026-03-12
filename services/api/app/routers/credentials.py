@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import BrokerCredential, User
+from app.metrics import credential_operations_total
 from app.services.audit_service import log_action
 from app.services.credential_service import encrypt_credential
 
@@ -101,6 +102,7 @@ async def create_credential(
     )
     await db.commit()
     await db.refresh(cred)
+    credential_operations_total.labels(operation="create").inc()
     logger.info(
         "User %d created credential '%s' (id=%d, broker=%s/%s)",
         current_user.id, body.label, cred.id, body.broker_type, body.environment,
@@ -155,6 +157,7 @@ async def update_credential(
     )
     await db.commit()
     await db.refresh(cred)
+    credential_operations_total.labels(operation="rotate").inc()
     logger.info(
         "User %d rotated credential '%s' (id=%d, fields=%s)",
         current_user.id, cred.label, cred.id, changed_fields,
@@ -192,6 +195,7 @@ async def delete_credential(
         details={"broker_type": cred.broker_type},
         ip_address=request.client.host if request.client else None,
     )
+    credential_operations_total.labels(operation="delete").inc()
     logger.info(
         "User %d deleted credential '%s' (id=%d, broker=%s)",
         current_user.id, cred.label, cred.id, cred.broker_type,

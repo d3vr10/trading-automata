@@ -34,6 +34,7 @@ from trading_automata.metrics import (
     engine_evaluation_cycles_total,
     engine_broker_errors_total,
     engine_trades_executed_total,
+    engine_bot_setup_duration_seconds,
 )
 from trading_automata.commands.publisher import EventPublisher
 from trading_automata.risk.position_tracker import PositionTracker
@@ -134,6 +135,8 @@ class BotInstance:
             On failure, self.setup_error contains a user-facing reason.
         """
         self.setup_error: str | None = None
+        import time as _time
+        _setup_start = _time.monotonic()
         try:
             self.logger.info(f"Setting up bot components...")
 
@@ -153,6 +156,7 @@ class BotInstance:
                 broker_type=self.config.broker.type,
                 environment=environment,
                 config=broker_config,
+                bot_name=self.bot_name,
             )
 
             if not self.broker.connect():
@@ -236,7 +240,11 @@ class BotInstance:
             if symbols:
                 self.logger.info(f"Monitoring symbols: {', '.join(sorted(symbols))}")
 
-            self.logger.info(f"✅ Setup complete")
+            _setup_duration = _time.monotonic() - _setup_start
+            engine_bot_setup_duration_seconds.labels(
+                bot_name=self.bot_name, broker=self.config.broker.type,
+            ).observe(_setup_duration)
+            self.logger.info(f"✅ Setup complete ({_setup_duration:.1f}s)")
             return True
 
         except Exception as e:

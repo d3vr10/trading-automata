@@ -70,7 +70,8 @@ class BrokerFactory:
     def create_broker(
         broker_type: str,
         environment: Environment,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        bot_name: str = "",
     ) -> IBroker:
         """Create a broker instance.
 
@@ -96,7 +97,7 @@ class BrokerFactory:
                 secret_key=config['secret_key'],
                 environment=environment
             )
-            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0)
+            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0, bot_name=bot_name)
 
         elif broker_type == 'coinbase':
             if 'api_key' not in config or 'secret_key' not in config or 'passphrase' not in config:
@@ -110,7 +111,7 @@ class BrokerFactory:
                 passphrase=config['passphrase'],
                 environment=environment
             )
-            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0)
+            return RateLimitedBroker(broker, max_retries=3, base_delay=1.0, bot_name=bot_name)
 
         else:
             raise ValueError(

@@ -14,6 +14,8 @@ import logging
 import time
 from typing import Any
 
+from trading_automata.metrics import engine_rate_limit_retries_total
+
 logger = logging.getLogger(__name__)
 
 # Known rate-limit error patterns across broker SDKs
@@ -70,10 +72,11 @@ class RateLimitedBroker:
     # Methods that should NOT be retried (connection lifecycle)
     _NO_RETRY_METHODS = {"connect", "disconnect", "get_environment"}
 
-    def __init__(self, broker, max_retries: int = 3, base_delay: float = 1.0):
+    def __init__(self, broker, max_retries: int = 3, base_delay: float = 1.0, bot_name: str = ""):
         self._broker = broker
         self._max_retries = max_retries
         self._base_delay = base_delay
+        self._bot_name = bot_name
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._broker, name)
@@ -92,6 +95,9 @@ class RateLimitedBroker:
                         raise
                     last_exc = exc
                     delay = self._base_delay * (2 ** attempt)
+                    engine_rate_limit_retries_total.labels(
+                        bot_name=self._bot_name, method=name,
+                    ).inc()
                     logger.warning(
                         f"[{name}] Rate limited (attempt {attempt + 1}/{self._max_retries + 1}), "
                         f"retrying in {delay:.1f}s: {exc}"

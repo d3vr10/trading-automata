@@ -17,6 +17,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models import BotConfiguration, BrokerCredential, User
 from app.services import bot_service, trade_service
+from app.metrics import bot_commands_total
 from app.services.audit_service import log_action
 from app.services.credential_service import decrypt_credential
 
@@ -639,6 +640,8 @@ async def start_bot(
         logger.error("Failed to send start command for bot '%s': %s", bot.name, e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to send start command: {e}")
 
+    bot_commands_total.labels(action="start", broker_type=cred.broker_type).inc()
+
     # Mark as active + desired_state in DB
     bot.is_active = True
     bot.desired_state = "running"
@@ -662,6 +665,9 @@ async def pause_bot(
     logger.info("User %d pausing bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "pause_bot", bot.name, current_user.id)
 
+    cred_result = await db.execute(select(BrokerCredential).where(BrokerCredential.id == bot.credential_id))
+    bot_commands_total.labels(action="pause", broker_type=cred_result.scalar_one().broker_type).inc()
+
     bot.desired_state = "paused"
     await log_action(db, current_user.id, "pause_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
@@ -682,6 +688,9 @@ async def resume_bot(
     logger.info("User %d resuming bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "resume_bot", bot.name, current_user.id)
 
+    cred_result = await db.execute(select(BrokerCredential).where(BrokerCredential.id == bot.credential_id))
+    bot_commands_total.labels(action="resume", broker_type=cred_result.scalar_one().broker_type).inc()
+
     bot.desired_state = "running"
     await log_action(db, current_user.id, "resume_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
@@ -701,6 +710,9 @@ async def stop_bot(
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
     logger.info("User %d stopping bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "stop_bot", bot.name, current_user.id)
+
+    cred_result = await db.execute(select(BrokerCredential).where(BrokerCredential.id == bot.credential_id))
+    bot_commands_total.labels(action="stop", broker_type=cred_result.scalar_one().broker_type).inc()
 
     bot.is_active = False
     bot.desired_state = "stopped"
