@@ -5,12 +5,23 @@ import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.routing import Route
 
 from app.auth.bootstrap import bootstrap_root_user
 from app.config import settings
+
+# Initialize Sentry (no-op if DSN is empty)
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        send_default_pii=False,
+    )
 from app.database import async_session, engine
 from app.metrics import (
     PrometheusMiddleware, metrics_endpoint,

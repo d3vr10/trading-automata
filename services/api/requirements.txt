@@ -22,6 +22,7 @@ redis[hiredis]>=5.0.0
 
 # Monitoring
 prometheus-client>=0.20.0
+sentry-sdk[fastapi]>=2.0.0
 
 # Utilities
 python-dateutil>=2.8.0

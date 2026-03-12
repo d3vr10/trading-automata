@@ -30,6 +30,7 @@ redis[hiredis]>=5.0.0
 
 # Monitoring
 prometheus-client>=0.20.0
+sentry-sdk>=2.0.0
 
 # Async support
 aiohttp>=3.9.0

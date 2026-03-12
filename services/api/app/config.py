@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    # Observability
+    sentry_dsn: str = ""  # Optional — leave empty to disable
+    environment: str = "development"
+
     model_config = {"env_prefix": "", "case_sensitive": False}
 
     @property

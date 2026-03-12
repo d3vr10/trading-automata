@@ -11,11 +11,24 @@ with environment variables (which take precedence).
 
 import asyncio
 import logging
+import os
 import sys
+
+import sentry_sdk
 
 from trading_automata.monitoring.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Initialize Sentry (no-op if DSN is empty)
+_sentry_dsn = os.environ.get("SENTRY_DSN", "")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.environ.get("ENVIRONMENT", "development"),
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
 
 
 def main():

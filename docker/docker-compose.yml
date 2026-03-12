@@ -80,6 +80,9 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_FILE: /app/logs/trading-automata.log
 
+      # Observability
+      SENTRY_DSN: ${SENTRY_DSN:-}
+
       # Strategy configuration
       STRATEGY_CONFIG_PATH: ${STRATEGY_CONFIG_PATH:-config/strategies.yaml}
       CONFIG_FILE_PATH: ${CONFIG_FILE_PATH:-config/config.yml}
@@ -134,6 +137,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       - "8000:8000"
     restart: unless-stopped
