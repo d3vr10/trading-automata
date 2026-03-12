@@ -1,8 +1,11 @@
 """Bot management routes — CRUD + lifecycle via Redis commands."""
 
+import logging
 from typing import Annotated, Optional
 
 import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -607,32 +610,41 @@ async def start_bot(
     )
     cred = cred_result.scalar_one()
 
-    await bot_service.send_start_bot_command(
-        redis_client,
-        bot_name=bot.name,
-        user_id=current_user.id,
-        config={
-            "strategy_id": bot.strategy_id,
-            "broker_type": cred.broker_type,
-            "environment": cred.environment,
-            "api_key": decrypt_credential(cred.encrypted_api_key),
-            "secret_key": decrypt_credential(cred.encrypted_secret_key),
-            "passphrase": decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
-            "allocation": float(bot.allocation),
-            "fence_type": bot.fence_type,
-            "fence_overage_pct": bot.fence_overage_pct,
-            "stop_loss_pct": bot.stop_loss_pct,
-            "take_profit_pct": bot.take_profit_pct,
-            "max_position_size": bot.max_position_size,
-            "poll_interval_minutes": bot.poll_interval_minutes,
-        },
+    logger.info(
+        "User %d starting bot '%s' (id=%d, broker=%s/%s)",
+        current_user.id, bot.name, bot.id, cred.broker_type, cred.environment,
     )
+    try:
+        await bot_service.send_start_bot_command(
+            redis_client,
+            bot_name=bot.name,
+            user_id=current_user.id,
+            config={
+                "strategy_id": bot.strategy_id,
+                "broker_type": cred.broker_type,
+                "environment": cred.environment,
+                "api_key": decrypt_credential(cred.encrypted_api_key),
+                "secret_key": decrypt_credential(cred.encrypted_secret_key),
+                "passphrase": decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
+                "allocation": float(bot.allocation),
+                "fence_type": bot.fence_type,
+                "fence_overage_pct": bot.fence_overage_pct,
+                "stop_loss_pct": bot.stop_loss_pct,
+                "take_profit_pct": bot.take_profit_pct,
+                "max_position_size": bot.max_position_size,
+                "poll_interval_minutes": bot.poll_interval_minutes,
+            },
+        )
+    except Exception as e:
+        logger.error("Failed to send start command for bot '%s': %s", bot.name, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to send start command: {e}")
 
     # Mark as active + desired_state in DB
     bot.is_active = True
     bot.desired_state = "running"
     await log_action(db, current_user.id, "start_bot", "bot", bot.id, bot.name, ip_address=request.client.host if request.client else None)
     await db.commit()
+    logger.info("Start command sent for bot '%s', desired_state='running'", bot.name)
 
     return BotCommandResponse(bot_name=bot.name, action="start", status="command_sent")
 
@@ -647,6 +659,7 @@ async def pause_bot(
 ):
     """Pause a running bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    logger.info("User %d pausing bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "pause_bot", bot.name, current_user.id)
 
     bot.desired_state = "paused"
@@ -666,6 +679,7 @@ async def resume_bot(
 ):
     """Resume a paused bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    logger.info("User %d resuming bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "resume_bot", bot.name, current_user.id)
 
     bot.desired_state = "running"
@@ -685,6 +699,7 @@ async def stop_bot(
 ):
     """Stop a running bot."""
     bot = await _get_bot_or_404(db, bot_id, current_user.id)
+    logger.info("User %d stopping bot '%s' (id=%d)", current_user.id, bot.name, bot.id)
     await bot_service.send_bot_command(redis_client, "stop_bot", bot.name, current_user.id)
 
     bot.is_active = False

@@ -20,7 +20,7 @@ import { Link } from "@/i18n/navigation";
 import {
   ArrowLeft, Play, Pause, Square, RefreshCw, Target, BarChart3,
   TrendingUp, TrendingDown, Zap, AlertTriangle, RotateCw, Radio,
-  ExternalLink,
+  ExternalLink, Loader2,
 } from "lucide-react";
 import { StatusCardSkeleton, TableSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,6 +90,7 @@ export default function BotDetailPage() {
   const [events, setEvents] = useState<BotEvent[]>([]);
   const [stats, setStats] = useState<BotStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingAction, setPendingAction] = useState<"start" | "pause" | "resume" | "stop" | null>(null);
   const { isConnected, on } = useWebSocket();
 
   const load = useCallback(async () => {
@@ -117,6 +118,18 @@ export default function BotDetailPage() {
   }, [botId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Poll for status updates while action is pending
+  useEffect(() => {
+    if (!pendingAction || !bot) return;
+    const interval = setInterval(async () => {
+      try {
+        const allStatus = await getBotStatus();
+        setStatus((allStatus[bot.name] as Record<string, unknown>) ?? null);
+      } catch {}
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pendingAction, bot]);
 
   // Real-time updates via WebSocket
   useEffect(() => {
@@ -148,15 +161,46 @@ export default function BotDetailPage() {
     return () => cleanups.forEach((fn) => fn());
   }, [bot, on]);
 
+  // Clear pending action when status changes
+  useEffect(() => {
+    if (!pendingAction || !status) return;
+    const rs = status as any;
+    let resolved = false;
+    if (pendingAction === "start") {
+      if (rs.running) resolved = true;
+      if (rs.error) {
+        resolved = true;
+        toast.error(t("startFailed", { error: rs.error }));
+      }
+    } else if (pendingAction === "pause") {
+      resolved = rs.paused === true || !rs.running;
+    } else if (pendingAction === "resume") {
+      resolved = rs.running === true && rs.paused === false;
+    } else if (pendingAction === "stop") {
+      resolved = !rs.running;
+    }
+    if (resolved) setPendingAction(null);
+  }, [status, pendingAction, t]);
+
+  // Timeout for pending actions
+  useEffect(() => {
+    if (!pendingAction) return;
+    const timer = setTimeout(() => {
+      setPendingAction(null);
+      toast.error(t("startTimeout"));
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [pendingAction, t]);
+
   async function handleAction(action: "start" | "pause" | "resume" | "stop") {
+    setPendingAction(action);
     try {
       if (action === "start") await startBot(botId);
       else if (action === "pause") await pauseBot(botId);
       else if (action === "resume") await resumeBot(botId);
       else await stopBot(botId);
-      toast.success(t("actionSent", { botName: bot?.name ?? "", action }));
-      setTimeout(load, 1000);
     } catch (err) {
+      setPendingAction(null);
       toast.error(err instanceof Error ? err.message : t("actionFailed", { action }));
     }
   }
@@ -211,12 +255,27 @@ export default function BotDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">{bot.name}</h1>
-        <Badge
-          variant={isPaused ? "secondary" : isRunning ? "default" : "destructive"}
-          className={isRunning && !isPaused ? "bg-primary/20 text-primary border-primary/30" : ""}
-        >
-          {isPaused ? t("statusPaused") : isRunning ? t("statusRunning") : t("statusStopped")}
-        </Badge>
+        {pendingAction ? (
+          <Badge variant="secondary" className="bg-blue-500/20 text-blue-300 border-blue-500/30">
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            {pendingAction === "start" ? t("statusStarting")
+              : pendingAction === "stop" ? `${t("stop")}...`
+              : pendingAction === "pause" ? `${t("pause")}...`
+              : `${t("resume")}...`}
+          </Badge>
+        ) : (status as any)?.error ? (
+          <Badge variant="destructive" className="bg-red-500/20 text-red-300 border-red-500/30">
+            <AlertTriangle className="mr-1 h-3 w-3" />
+            Error
+          </Badge>
+        ) : (
+          <Badge
+            variant={isPaused ? "secondary" : isRunning ? "default" : "destructive"}
+            className={isRunning && !isPaused ? "bg-primary/20 text-primary border-primary/30" : ""}
+          >
+            {isPaused ? t("statusPaused") : isRunning ? t("statusRunning") : t("statusStopped")}
+          </Badge>
+        )}
       </div>
 
       {/* Config + Status */}
@@ -279,26 +338,45 @@ export default function BotDetailPage() {
             )}
           </div>
 
+          {/* Error message from engine */}
+          {(status as any)?.error && !pendingAction && (
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-300">
+              {(status as any).error}
+            </div>
+          )}
+
           <div className="flex gap-2">
-            {isStopped && (
-              <Button size="sm" className="rounded-lg" onClick={() => handleAction("start")}>
-                <Play className="mr-1 h-3.5 w-3.5" /> {t("start")}
+            {pendingAction ? (
+              <Button size="sm" className="rounded-lg" disabled>
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                {pendingAction === "start" ? t("statusStarting")
+                  : pendingAction === "stop" ? `${t("stop")}...`
+                  : pendingAction === "pause" ? `${t("pause")}...`
+                  : `${t("resume")}...`}
               </Button>
-            )}
-            {isRunning && !isPaused && (
-              <Button size="sm" variant="secondary" className="rounded-lg" onClick={() => handleAction("pause")}>
-                <Pause className="mr-1 h-3.5 w-3.5" /> {t("pause")}
-              </Button>
-            )}
-            {isPaused && (
-              <Button size="sm" className="rounded-lg" onClick={() => handleAction("resume")}>
-                <Play className="mr-1 h-3.5 w-3.5" /> {t("resume")}
-              </Button>
-            )}
-            {isRunning && (
-              <Button size="sm" variant="destructive" className="rounded-lg" onClick={() => handleAction("stop")}>
-                <Square className="mr-1 h-3.5 w-3.5" /> {t("stop")}
-              </Button>
+            ) : (
+              <>
+                {isStopped && (
+                  <Button size="sm" className="rounded-lg" onClick={() => handleAction("start")}>
+                    <Play className="mr-1 h-3.5 w-3.5" /> {t("start")}
+                  </Button>
+                )}
+                {isRunning && !isPaused && (
+                  <Button size="sm" variant="secondary" className="rounded-lg" onClick={() => handleAction("pause")}>
+                    <Pause className="mr-1 h-3.5 w-3.5" /> {t("pause")}
+                  </Button>
+                )}
+                {isPaused && (
+                  <Button size="sm" className="rounded-lg" onClick={() => handleAction("resume")}>
+                    <Play className="mr-1 h-3.5 w-3.5" /> {t("resume")}
+                  </Button>
+                )}
+                {isRunning && (
+                  <Button size="sm" variant="destructive" className="rounded-lg" onClick={() => handleAction("stop")}>
+                    <Square className="mr-1 h-3.5 w-3.5" /> {t("stop")}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
