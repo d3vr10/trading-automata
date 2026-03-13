@@ -1,0 +1,267 @@
+{
+  "id": null,
+  "uid": "ta-trading-engine",
+  "title": "Trading Automata — Trading Engine",
+  "description": "Bot fleet health, evaluation cycles, broker errors, rate limit retries, startup duration, lifecycle commands.",
+  "tags": ["trading-automata", "trading-engine", "prometheus"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "bot_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(engine_evaluation_cycles_total, bot_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Bot Fleet Overview",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Running Bots",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "engine_bots_total{state=\"running\"}",
+          "legendFormat": "running"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Paused Bots",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "engine_bots_total{state=\"paused\"}",
+          "legendFormat": "paused"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Stopped Bots",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{ "color": "#808080", "value": null }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "engine_bots_total{state=\"stopped\"}",
+          "legendFormat": "stopped"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Faulty Bots",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "engine_bots_total{state=\"faulty\"}",
+          "legendFormat": "faulty"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Heartbeat Staleness per Bot",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 120 }] }
+        },
+        "overrides": []
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "engine_heartbeat_age_seconds{bot_name=~\"$bot_name\"}",
+          "legendFormat": "{{bot_name}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Evaluation Cycles / min per Bot",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "cpm", "custom": { "fillOpacity": 15 } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(engine_evaluation_cycles_total{bot_name=~\"$bot_name\"}[$__rate_interval]) * 60",
+          "legendFormat": "{{bot_name}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Broker & Trades",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Broker Errors per Bot",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 30 }, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(engine_broker_errors_total{bot_name=~\"$bot_name\"}[$__rate_interval])",
+          "legendFormat": "{{bot_name}} ({{error_type}})"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Trades Executed per Bot",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "drawStyle": "bars" } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(engine_trades_executed_total{bot_name=~\"$bot_name\"}[$__rate_interval])",
+          "legendFormat": "{{bot_name}} ({{broker}})"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Broker Rate Limit Retries per Bot",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 30 }, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (bot_name, method) (rate(engine_rate_limit_retries_total{bot_name=~\"$bot_name\"}[5m]))",
+          "legendFormat": "{{bot_name}} — {{method}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Bot Startup Duration (p50 / p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum by (le, bot_name) (rate(engine_bot_setup_duration_seconds_bucket{bot_name=~\"$bot_name\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{bot_name}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le, bot_name) (rate(engine_bot_setup_duration_seconds_bucket{bot_name=~\"$bot_name\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{bot_name}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Lifecycle",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Bot Lifecycle Commands / hr",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 25, "stacking": { "mode": "normal" }, "drawStyle": "bars" } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (action) (increase(bot_commands_total[1h]))",
+          "legendFormat": "{{action}}"
+        }
+      ]
+    }
+  ]
+}
