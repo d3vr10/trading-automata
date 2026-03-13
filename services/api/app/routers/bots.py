@@ -408,6 +408,43 @@ async def get_recovery_pending(
     return items
 
 
+class BotCredentialRefresh(BaseModel):
+    api_key: str
+    secret_key: str
+    passphrase: str
+
+
+@router.get("/credentials/refresh/{bot_name}", response_model=BotCredentialRefresh)
+async def get_bot_credentials(
+    bot_name: str,
+    user_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Fetch current decrypted credentials for a running bot.
+
+    Internal endpoint used by the trading engine when it detects an auth
+    failure (401/403) and needs to re-read credentials after a rotation.
+    No user auth required — called by engine process only.
+    """
+    result = await db.execute(
+        select(BrokerCredential)
+        .join(BotConfiguration, BotConfiguration.credential_id == BrokerCredential.id)
+        .where(
+            BotConfiguration.name == bot_name,
+            BotConfiguration.user_id == user_id,
+        )
+    )
+    cred = result.scalar_one_or_none()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Bot or credential not found")
+
+    return BotCredentialRefresh(
+        api_key=decrypt_credential(cred.encrypted_api_key),
+        secret_key=decrypt_credential(cred.encrypted_secret_key),
+        passphrase=decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
+    )
+
+
 # ---- Lifecycle commands (Redis) ----
 
 @router.get("/portfolio/history")

@@ -88,6 +88,30 @@ export default function DashboardPage() {
   const portfolioValue = hasLiveAccounts ? accounts.total_equity : (portfolio?.total_invested ?? 0);
   const availableCash = hasLiveAccounts ? accounts.total_cash : 0;
 
+  // Group accounts by broker type for portfolio breakdown
+  const brokerBreakdown = new Map<string, { equity: number; cash: number; count: number }>();
+  if (hasLiveAccounts) {
+    for (const acc of accounts.accounts) {
+      const key = acc.broker_type || "unknown";
+      const prev = brokerBreakdown.get(key) || { equity: 0, cash: 0, count: 0 };
+      brokerBreakdown.set(key, {
+        equity: prev.equity + acc.equity,
+        cash: prev.cash + acc.cash,
+        count: prev.count + 1,
+      });
+    }
+  }
+
+  // Group account cards by broker for sectioned display
+  const accountsByBroker = new Map<string, NonNullable<typeof accounts>["accounts"]>();
+  if (hasLiveAccounts) {
+    for (const acc of accounts.accounts) {
+      const key = acc.broker_type || "unknown";
+      if (!accountsByBroker.has(key)) accountsByBroker.set(key, []);
+      accountsByBroker.get(key)!.push(acc);
+    }
+  }
+
   // Build drawdown lookup
   const ddByBot = new Map(drawdownStats.map((d) => [d.bot_name, d]));
 
@@ -134,12 +158,31 @@ export default function DashboardPage() {
 
       {/* Global summary row (compact) */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MiniSummary
-          label={t("portfolioValue")}
-          value={`$${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          sub={hasLiveAccounts ? `$${availableCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t("availableCash")}` : undefined}
-          icon={DollarSign}
-        />
+        <div className="glass rounded-xl px-4 py-3 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-accent/30 flex items-center justify-center shrink-0">
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] text-muted-foreground">{t("portfolioValue")}</div>
+            <div className="text-lg font-semibold leading-tight">
+              ${portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            {brokerBreakdown.size > 1 ? (
+              <div className="mt-0.5 space-y-0">
+                {Array.from(brokerBreakdown.entries()).map(([broker, data]) => (
+                  <div key={broker} className="text-[10px] text-muted-foreground flex justify-between">
+                    <span className="capitalize">{broker}</span>
+                    <span>${data.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+            ) : hasLiveAccounts ? (
+              <div className="text-[10px] text-muted-foreground">
+                ${availableCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t("availableCash")}
+              </div>
+            ) : null}
+          </div>
+        </div>
         <MiniSummary
           label={t("activeBots")}
           value={`${activeBots}/${botEntries.length}`}
@@ -159,12 +202,21 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Per-Account Cards (primary view) */}
+      {/* Per-Account Cards grouped by broker */}
       {hasLiveAccounts && accounts.accounts.length > 0 && (
-        <div>
-          <h2 className="text-sm font-medium text-muted-foreground mb-3">{t("byAccount")}</h2>
+        <div className="space-y-4">
+          {Array.from(accountsByBroker.entries()).map(([brokerType, brokerAccounts]) => (
+          <div key={brokerType}>
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-sm font-medium text-muted-foreground capitalize">{brokerType}</h2>
+              {brokerBreakdown.has(brokerType) && (
+                <span className="text-[10px] text-muted-foreground">
+                  ${brokerBreakdown.get(brokerType)!.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                </span>
+              )}
+            </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.accounts.map((acc) => {
+            {brokerAccounts.map((acc) => {
               const botName = acc.bot_name || "unknown";
               const status = bots[botName] as Record<string, any> | undefined;
               const isRunning = status?.running && !status?.paused;
@@ -239,6 +291,8 @@ export default function DashboardPage() {
               );
             })}
           </div>
+          </div>
+          ))}
         </div>
       )}
 
@@ -289,27 +343,63 @@ export default function DashboardPage() {
             <h2 className="font-semibold">{t("allocation")}</h2>
           </div>
           <div className="p-5 space-y-5">
-            {hasLiveAccounts && accounts.positions.length > 0 ? (
-              <>
-                <div className="space-y-2">
-                  {accounts.positions.slice(0, 8).map((p) => (
-                    <div key={`${p.bot_name}-${p.symbol}`} className="flex items-center justify-between text-sm">
-                      <div className="min-w-0">
-                        <span className="font-medium">{p.symbol}</span>
-                        <span className="text-[10px] text-muted-foreground ml-1.5">{p.bot_name}</span>
+            {/* Bot capital allocations (virtual fence utilization) */}
+            {hasLiveAccounts && accounts.accounts.length > 0 && (
+              <div className="space-y-2.5">
+                <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t("botAllocations")}</h3>
+                {accounts.accounts.map((acc) => {
+                  const botName = acc.bot_name || "unknown";
+                  const status = bots[botName] as Record<string, any> | undefined;
+                  const isActive = status?.running;
+                  if (!isActive) return null;
+                  const equity = acc.equity;
+                  const cash = acc.cash;
+                  const invested = equity - cash;
+                  const utilizationPct = equity > 0 ? (invested / equity) * 100 : 0;
+                  return (
+                    <div key={botName} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="min-w-0">
+                          <span className="font-medium">{botName}</span>
+                          <span className="text-muted-foreground ml-1.5 capitalize">{acc.broker_type}</span>
+                        </div>
+                        <span className="text-muted-foreground">
+                          ${invested.toLocaleString(undefined, { maximumFractionDigits: 0 })} {t("of")} ${equity.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
                       </div>
-                      <div className="text-right">
-                        <span className="text-muted-foreground">${p.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        {p.unrealized_pnl !== 0 && (
-                          <span className={`ml-2 text-xs ${p.unrealized_pnl >= 0 ? "text-primary" : "text-destructive"}`}>
-                            {p.unrealized_pnl >= 0 ? "+" : ""}${p.unrealized_pnl.toFixed(2)}
-                          </span>
-                        )}
+                      <div className="h-1.5 rounded-full bg-accent/30 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary/70 transition-all"
+                          style={{ width: `${Math.min(utilizationPct, 100)}%` }}
+                        />
                       </div>
                     </div>
-                  ))}
-                </div>
-              </>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Open positions */}
+            {hasLiveAccounts && accounts.positions.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t("allocation")}</h3>
+                {accounts.positions.slice(0, 6).map((p) => (
+                  <div key={`${p.bot_name}-${p.symbol}`} className="flex items-center justify-between text-sm">
+                    <div className="min-w-0">
+                      <span className="font-medium">{p.symbol}</span>
+                      <span className="text-[10px] text-muted-foreground ml-1.5">{p.bot_name}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-muted-foreground">${p.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      {p.unrealized_pnl !== 0 && (
+                        <span className={`ml-2 text-xs ${p.unrealized_pnl >= 0 ? "text-primary" : "text-destructive"}`}>
+                          {p.unrealized_pnl >= 0 ? "+" : ""}${p.unrealized_pnl.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : portfolio && portfolio.allocations.length > 0 ? (
               <div className="space-y-2">
                 {portfolio.allocations.slice(0, 6).map((a) => (
@@ -326,11 +416,11 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : !hasLiveAccounts || accounts.accounts.every((a) => !(bots[a.bot_name || ""] as any)?.running) ? (
               <div className="text-muted-foreground text-sm text-center py-4">
                 {t("noOpenPositions")}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

@@ -55,6 +55,7 @@ class AlpacaBroker(IBroker):
             return True
         except Exception as e:
             logger.error(f"Failed to connect to Alpaca: {e}")
+            self._last_connect_error = str(e)
             self._connected = False
             return False
 

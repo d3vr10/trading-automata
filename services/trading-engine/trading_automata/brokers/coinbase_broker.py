@@ -72,6 +72,7 @@ class CoinbaseBroker(IBroker):
 
         except Exception as e:
             logger.error(f"Failed to connect to Coinbase: {e}")
+            self._last_connect_error = str(e)
             self._connected = False
             return False
 
@@ -342,7 +343,7 @@ class CoinbaseBroker(IBroker):
                 logger.warning(f"No open position for {symbol}")
                 return False
 
-            qty = position.get('quantity', 0)
+            qty = position.get('qty', 0)
             if qty == 0:
                 logger.warning(f"Position quantity is 0 for {symbol}")
                 return False

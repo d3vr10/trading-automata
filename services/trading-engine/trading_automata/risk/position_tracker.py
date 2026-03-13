@@ -74,6 +74,8 @@ class PositionTracker:
 
         # --- Trailing stop logic ---
         if self.risk.trailing_stop:
+            if pos.entry_price <= 0:
+                return None
             profit_pct = float((current_price - pos.entry_price) / pos.entry_price * 100)
             activation = self.risk.trailing_activation_pct
 

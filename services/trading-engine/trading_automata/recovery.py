@@ -85,3 +85,35 @@ def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> tuple[Dict[
     }
 
     return config, recovery_item["user_id"], recovery_item["desired_state"]
+
+
+async def fetch_fresh_credentials(
+    api_url: str, bot_name: str, user_id: int,
+) -> Optional[Dict[str, str]]:
+    """Fetch current decrypted credentials for a running bot.
+
+    Called when the engine detects an auth failure (401/403) on a broker
+    connection, indicating credentials may have been rotated via the dashboard.
+
+    Args:
+        api_url: Base URL of the API service
+        bot_name: Bot name to look up
+        user_id: Owner user ID
+
+    Returns:
+        Dict with api_key, secret_key, passphrase — or None on failure.
+    """
+    endpoint = f"{api_url}/api/bots/credentials/refresh/{bot_name}?user_id={user_id}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    logger.info(f"Fetched fresh credentials for bot '{bot_name}'")
+                    return data
+                else:
+                    logger.warning(f"Credential refresh returned {resp.status} for '{bot_name}'")
+                    return None
+    except Exception as e:
+        logger.warning(f"Failed to fetch credentials for '{bot_name}': {e}")
+        return None

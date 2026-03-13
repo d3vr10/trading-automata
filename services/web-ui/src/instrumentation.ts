@@ -9,7 +9,15 @@
  */
 
 export async function register() {
-  // Only instrument on the Node.js runtime (not edge)
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("../sentry.server.config");
+  }
+
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("../sentry.edge.config");
+  }
+
+  // OpenTelemetry — Node.js only
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { NodeSDK } = await import("@opentelemetry/sdk-node");
     const { PrometheusExporter } = await import(

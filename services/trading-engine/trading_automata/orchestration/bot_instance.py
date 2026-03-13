@@ -564,6 +564,9 @@ class BotInstance:
     async def _try_broker_reconnect(self) -> bool:
         """Try to reconnect to broker with exponential backoff.
 
+        On auth failure (401/403), attempts to fetch fresh credentials
+        from the API service and reinitialize the broker connection.
+
         Returns:
             True if connected, False otherwise
         """
@@ -587,17 +590,63 @@ class BotInstance:
             self.logger.info(f"Broker reconnected successfully")
             self._broker_reconnect_attempts = 0
             return True
-        else:
-            self._broker_reconnect_attempts += 1
-            self._consecutive_broker_errors += 1
-            engine_broker_errors_total.labels(
-                bot_name=self.bot_name, error_type="connection",
-            ).inc()
-            self.logger.warning(
-                f"Broker reconnection failed "
-                f"(attempt {self._broker_reconnect_attempts}/{self._broker_max_reconnect_attempts})"
-            )
+
+        # Connection failed — check if it's an auth error
+        error_str = getattr(self.broker, '_last_connect_error', '').lower()
+        is_auth_error = any(kw in error_str for kw in ('401', '403', 'unauthorized', 'forbidden', 'invalid key', 'invalid api'))
+
+        if is_auth_error and self._user_id:
+            self.logger.warning("Auth failure detected, attempting credential refresh...")
+            refreshed = await self._refresh_broker_credentials()
+            if refreshed and self.broker.connect():
+                self.logger.info("Broker reconnected with refreshed credentials")
+                self._broker_reconnect_attempts = 0
+                return True
+
+        self._broker_reconnect_attempts += 1
+        self._consecutive_broker_errors += 1
+        engine_broker_errors_total.labels(
+            bot_name=self.bot_name, error_type="auth" if is_auth_error else "connection",
+        ).inc()
+        self.logger.warning(
+            f"Broker reconnection failed "
+            f"(attempt {self._broker_reconnect_attempts}/{self._broker_max_reconnect_attempts})"
+        )
+        return False
+
+    async def _refresh_broker_credentials(self) -> bool:
+        """Fetch fresh credentials from API and update broker in-place.
+
+        Returns:
+            True if credentials were refreshed successfully.
+        """
+        import os
+        from trading_automata.recovery import fetch_fresh_credentials
+
+        api_url = os.getenv("API_URL", "http://api:8000")
+        creds = await fetch_fresh_credentials(api_url, self.bot_name, self._user_id)
+        if not creds:
+            self.logger.warning("Credential refresh returned no data")
             return False
+
+        # Update broker credentials in-place
+        self.broker.api_key = creds["api_key"]
+        self.broker.secret_key = creds["secret_key"]
+        if hasattr(self.broker, 'passphrase'):
+            self.broker.passphrase = creds.get("passphrase", "")
+
+        # Also update the config so future reconnects use fresh creds
+        self.config.broker.api_key = creds["api_key"]
+        self.config.broker.secret_key = creds["secret_key"]
+        self.config.broker.passphrase = creds.get("passphrase", "")
+
+        # Update data provider credentials too
+        if self.data_provider and hasattr(self.data_provider, 'api_key'):
+            self.data_provider.api_key = creds["api_key"]
+            self.data_provider.secret_key = creds["secret_key"]
+
+        self.logger.info("Broker credentials refreshed from API")
+        return True
 
     async def _cleanup_async(self) -> None:
         """Cleanup async resources."""

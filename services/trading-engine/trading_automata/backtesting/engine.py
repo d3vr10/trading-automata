@@ -121,6 +121,9 @@ class BacktestEngine:
             if signal and signal.action.lower() == "buy" and bar.symbol not in positions:
                 # Size the position
                 alloc = capital * self.position_size_pct
+                if current_price <= 0:
+                    logger.warning(f"Skipping buy: zero/negative price for {bar.symbol}")
+                    continue
                 qty = (alloc / current_price).quantize(Decimal("0.001"))
                 if qty > 0 and alloc <= capital:
                     capital -= current_price * qty
@@ -150,10 +153,14 @@ class BacktestEngine:
                 ))
 
             # Calculate equity (cash + open position value)
+            # For symbols not in the current bar, use entry_price as approximation
+            # (single-symbol backtests are the common case; multi-symbol needs
+            # a price map which we don't have here)
             open_value = sum(
                 bar.close * p.quantity if p.symbol == bar.symbol else p.entry_price * p.quantity
                 for p in positions.values()
             )
+            # TODO: multi-symbol backtesting should pass a price map per bar
             equity = capital + open_value
 
             # Track drawdown

@@ -76,6 +76,16 @@ class VirtualPortfolioManager:
             f"fence={fence.type}"
         )
 
+    def _get_cached_price(self, symbol: str) -> Optional[float]:
+        """Look up current_price for a symbol from the positions cache list."""
+        cache = self._real_pm._positions_cache
+        if not cache:
+            return None
+        for pos in cache:
+            if pos.get('symbol') == symbol:
+                return pos.get('current_price')
+        return None
+
     @property
     def virtual_balance(self) -> Decimal:
         """Get available virtual capital remaining.
@@ -114,7 +124,7 @@ class VirtualPortfolioManager:
             return False
 
         # Get current price for cost estimation
-        current_price = self._real_pm._positions_cache.get(signal.symbol, {}).get('current_price')
+        current_price = self._get_cached_price(signal.symbol)
         if not current_price:
             self.logger.warning(f"Cannot estimate cost for {signal.symbol} - no current price cached")
             return False
@@ -199,7 +209,7 @@ class VirtualPortfolioManager:
             return None
 
         # Apply risk controls
-        current_price = self._real_pm._positions_cache.get(signal.symbol, {}).get('current_price')
+        current_price = self._get_cached_price(signal.symbol)
         if current_price:
             signal = self.apply_risk_controls(signal, Decimal(str(current_price)))
         else:
@@ -253,7 +263,7 @@ class VirtualPortfolioManager:
         max_position_value = self.allocated_capital * max_position_pct
 
         # Get current price
-        current_price = self._real_pm._positions_cache.get(signal.symbol, {}).get('current_price')
+        current_price = self._get_cached_price(signal.symbol)
         if not current_price:
             # If no price cached, return requested quantity (risky but handles edge case)
             self.logger.warning(f"No current price for {signal.symbol}, using requested quantity")

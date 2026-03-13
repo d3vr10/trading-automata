@@ -62,7 +62,12 @@
     "drawdown": "Drawdown",
     "drawdownOverview": "Drawdown",
     "currentDrawdown": "Current",
-    "maxDrawdown": "Max"
+    "maxDrawdown": "Max",
+    "byBroker": "By Broker",
+    "botAllocations": "Bot Allocations",
+    "used": "used",
+    "of": "of",
+    "noBotAllocations": "No active bot allocations"
   },
   "strategies": {
     "title": "Strategies",

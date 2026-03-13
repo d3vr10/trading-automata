@@ -5,6 +5,7 @@ import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { notFound } from "next/navigation";
 import { Toaster } from "@/components/ui/sonner";
 import { routing } from "@/i18n/routing";
+import { SentryInit } from "@/components/sentry-init";
 import "../globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default async function LocaleLayout({
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased gradient-mesh min-h-screen`}
       >
+        <SentryInit />
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}
         </NextIntlClientProvider>

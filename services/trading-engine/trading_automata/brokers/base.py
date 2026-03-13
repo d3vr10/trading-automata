@@ -17,6 +17,8 @@ class IBroker(ABC):
     must follow, enabling easy switching between brokers and environments.
     """
 
+    _last_connect_error: str = ""
+
     @abstractmethod
     def connect(self) -> bool:
         """Establish connection to broker.
