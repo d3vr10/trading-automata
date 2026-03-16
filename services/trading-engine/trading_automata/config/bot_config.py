@@ -187,8 +187,6 @@ class BotConfig(BaseModel):
     @classmethod
     def validate_broker_credentials(cls, v):
         """Validate broker-specific credentials."""
-        if v.type == 'coinbase' and not v.passphrase:
-            raise ValueError("Coinbase broker requires passphrase to be set")
         return v
 
 

@@ -24,7 +24,7 @@ class CoinbaseBroker(IBroker):
     # Cache spot prices for 10 seconds to avoid hammering rate limits
     _PRICE_CACHE_TTL = 10
 
-    def __init__(self, api_key: str, secret_key: str, passphrase: str, environment: Environment):
+    def __init__(self, api_key: str, secret_key: str, passphrase: str = "", environment: Environment = Environment.LIVE):
         if RESTClient is None:
             raise ImportError(
                 "coinbase-advanced-py is required for Coinbase broker. "
