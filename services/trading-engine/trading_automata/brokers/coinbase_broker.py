@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
@@ -20,18 +21,10 @@ class CoinbaseBroker(IBroker):
     crypto trading on Coinbase exchange.
     """
 
+    # Cache spot prices for 10 seconds to avoid hammering rate limits
+    _PRICE_CACHE_TTL = 10
+
     def __init__(self, api_key: str, secret_key: str, passphrase: str, environment: Environment):
-        """Initialize Coinbase broker.
-
-        Args:
-            api_key: Coinbase API key
-            secret_key: Coinbase secret key
-            passphrase: Coinbase passphrase (additional security layer)
-            environment: Trading environment (PAPER or LIVE)
-
-        Raises:
-            ImportError: If coinbase-advanced-py is not installed.
-        """
         if RESTClient is None:
             raise ImportError(
                 "coinbase-advanced-py is required for Coinbase broker. "
@@ -44,20 +37,20 @@ class CoinbaseBroker(IBroker):
         self.passphrase = passphrase
         self.client = None
         self._connected = False
+        self._price_cache: Dict[str, tuple[float, float]] = {}  # symbol -> (price, timestamp)
 
     def connect(self) -> bool:
-        """Establish connection to Coinbase.
-
-        Returns:
-            True if connection successful, False otherwise.
-        """
         try:
-            # Initialize Coinbase REST client
+            if self.environment.value == "paper":
+                logger.warning(
+                    "Coinbase does not offer a sandbox/paper-trading environment. "
+                    "All orders will execute on the LIVE market. "
+                    "Use a sub-account with minimal funds for testing."
+                )
+
             self.client = RESTClient(
                 api_key=self.api_key,
                 api_secret=self.secret_key,
-                # Note: Coinbase Advanced Trading doesn't have paper trading mode
-                # For testing, use a sub-account with small funds
             )
 
             # Test connection by fetching account info
@@ -65,8 +58,8 @@ class CoinbaseBroker(IBroker):
             self._connected = True
 
             logger.info(
-                f"Connected to Coinbase ({self.environment.value} trading). "
-                f"Accounts: {len(accounts)}"
+                f"Connected to Coinbase (LIVE trading). "
+                f"Accounts: {len(accounts.get('accounts', []) if isinstance(accounts, dict) else accounts)}"
             )
             return True
 
@@ -77,40 +70,69 @@ class CoinbaseBroker(IBroker):
             return False
 
     def disconnect(self) -> None:
-        """Disconnect from Coinbase."""
         self._connected = False
         logger.info("Disconnected from Coinbase")
 
-    def get_account(self) -> Dict[str, Any]:
-        """Get account information.
+    def _get_spot_price(self, currency: str) -> float:
+        """Get current USD spot price with caching."""
+        now = time.monotonic()
+        cached = self._price_cache.get(currency)
+        if cached and (now - cached[1]) < self._PRICE_CACHE_TTL:
+            return cached[0]
 
-        Returns:
-            Dictionary with account details.
-        """
+        try:
+            product_id = f"{currency}-USD"
+            ticker = self.client.get_product(product_id)
+            price = float(ticker.get('price', 0))
+            self._price_cache[currency] = (price, now)
+            return price
+        except Exception:
+            try:
+                product_id = f"{currency}-USDC"
+                ticker = self.client.get_product(product_id)
+                price = float(ticker.get('price', 0))
+                self._price_cache[currency] = (price, now)
+                return price
+            except Exception:
+                logger.debug(f"No USD price available for {currency}")
+                return 0.0
+
+    def _parse_accounts(self, accounts_response) -> list:
+        """Extract account list from API response (handles dict or list)."""
+        if isinstance(accounts_response, dict):
+            return accounts_response.get('accounts', [])
+        return accounts_response if accounts_response else []
+
+    def get_account(self) -> Dict[str, Any]:
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            # Get all accounts
-            accounts = self.client.get_accounts()
-
-            # Calculate total portfolio value
+            accounts = self._parse_accounts(self.client.get_accounts())
             total_value = Decimal('0')
             total_cash = Decimal('0')
+            stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
 
             for account in accounts:
-                # Available balance in the account
+                currency = account.get('currency', '')
                 available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
-                total_value += available
+                hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                total_balance = available + hold
 
-                # Check if it's a USD/stablecoin account
-                if 'USD' in account.get('currency', '') or 'USDC' in account.get('currency', ''):
-                    total_cash += available
+                if total_balance <= 0:
+                    continue
+
+                if currency in stablecoins:
+                    total_value += total_balance
+                    total_cash += total_balance
+                else:
+                    usd_price = self._get_spot_price(currency)
+                    total_value += Decimal(str(float(total_balance) * usd_price))
 
             return {
-                'account_id': accounts[0].get('id') if accounts else 'unknown',
+                'account_id': accounts[0].get('uuid', 'unknown') if accounts else 'unknown',
                 'portfolio_value': float(total_value),
-                'buying_power': float(total_cash),  # Simplified: USD balance = buying power
+                'buying_power': float(total_cash),
                 'cash': float(total_cash),
                 'last_equity': float(total_value),
             }
@@ -120,33 +142,35 @@ class CoinbaseBroker(IBroker):
             raise
 
     def get_positions(self) -> List[Dict[str, Any]]:
-        """Get current positions.
-
-        Returns:
-            List of position dictionaries.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            accounts = self.client.get_accounts()
+            accounts = self._parse_accounts(self.client.get_accounts())
             positions = []
+            stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
 
             for account in accounts:
                 currency = account.get('currency', '')
                 available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
+                hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                total_balance = available + hold
 
-                # Only include non-zero positions
-                if available > 0 and currency not in ('USD', 'USDC', 'USDT'):
-                    positions.append({
-                        'symbol': currency,  # Crypto symbol
-                        'qty': float(available),
-                        'avg_fill_price': 0.0,  # Coinbase doesn't easily provide this
-                        'current_price': 0.0,  # Would need separate API call
-                        'unrealized_pl': 0.0,
-                        'unrealized_plpc': 0.0,
-                        'market_value': float(available),
-                    })
+                if total_balance <= 0 or currency in stablecoins:
+                    continue
+
+                current_price = self._get_spot_price(currency)
+                market_value = float(total_balance) * current_price
+
+                positions.append({
+                    'symbol': currency,
+                    'qty': float(total_balance),
+                    'avg_fill_price': 0.0,  # Coinbase doesn't provide cost basis via API
+                    'current_price': current_price,
+                    'unrealized_pl': 0.0,  # No cost basis available
+                    'unrealized_plpc': 0.0,
+                    'market_value': market_value,
+                })
 
             return positions
 
@@ -155,32 +179,28 @@ class CoinbaseBroker(IBroker):
             raise
 
     def get_position(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Get position for specific symbol.
-
-        Args:
-            symbol: Crypto symbol (e.g., 'BTC', 'ETH')
-
-        Returns:
-            Position dictionary or None if not found.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            accounts = self.client.get_accounts()
+            accounts = self._parse_accounts(self.client.get_accounts())
 
             for account in accounts:
                 if account.get('currency') == symbol:
                     available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
-                    if available > 0:
+                    hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                    total_balance = available + hold
+
+                    if total_balance > 0:
+                        current_price = self._get_spot_price(symbol)
                         return {
                             'symbol': symbol,
-                            'qty': float(available),
+                            'qty': float(total_balance),
                             'avg_fill_price': 0.0,
-                            'current_price': 0.0,
+                            'current_price': current_price,
                             'unrealized_pl': 0.0,
                             'unrealized_plpc': 0.0,
-                            'market_value': float(available),
+                            'market_value': float(total_balance) * current_price,
                         }
 
             return None
@@ -204,19 +224,12 @@ class CoinbaseBroker(IBroker):
 
         Args:
             symbol: Crypto symbol (e.g., 'BTC-USD', 'ETH-USD')
-            qty: Quantity to trade
+            qty: Quantity in base currency (e.g., 0.1 BTC)
             side: 'buy' or 'sell'
             order_type: 'market', 'limit', 'stop'
-            time_in_force: 'IOC' (immediate), 'GTC' (good till cancel), 'FOK' (fill or kill)
+            time_in_force: 'IOC', 'GTC', 'FOK'
             limit_price: Price for limit orders
             stop_price: Price for stop orders
-            **kwargs: Additional parameters
-
-        Returns:
-            Order ID
-
-        Raises:
-            ValueError: If parameters are invalid.
         """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
@@ -228,23 +241,25 @@ class CoinbaseBroker(IBroker):
             else:
                 product_id = symbol
 
-            # Map side
             side_lower = side.lower()
             if side_lower not in ('buy', 'sell'):
                 raise ValueError(f"Invalid side: {side}")
 
-            # Map order type and time in force
-            order_config = {
-                'client_order_id': kwargs.get('client_order_id'),
-                'product_id': product_id,
-                'side': side_lower,
-                'order_configuration': {}
-            }
+            # Normalize TIF
+            tif = time_in_force.upper() if time_in_force else 'GTC'
+            if tif not in ('GTC', 'IOC', 'FOK'):
+                tif = 'GTC'
+
+            # Build order configuration
+            order_config: Dict[str, Any] = {}
 
             if order_type.lower() == 'market':
-                order_config['order_configuration'] = {
+                # Market orders: use base_size (asset qty) for both buy and sell
+                # Coinbase also supports quote_size (USD amount) for buys,
+                # but base_size is consistent with how Alpaca and our engine work
+                order_config = {
                     'market_market_ioc': {
-                        'quote_size': str(qty)  # Size in quote currency (USD)
+                        'base_size': str(qty)
                     }
                 }
 
@@ -252,33 +267,49 @@ class CoinbaseBroker(IBroker):
                 if limit_price is None:
                     raise ValueError("limit_price required for limit orders")
 
-                tif = time_in_force.upper() if time_in_force else 'GTC'
-                if tif not in ('GTC', 'IOC', 'FOK'):
-                    tif = 'GTC'
-
-                order_config['order_configuration'] = {
-                    'limit_limit_gtc': {
-                        'base_size': str(qty),
-                        'limit_price': str(limit_price),
-                        'post_only': False
-                    }
-                }
-
+                # Use the correct config key based on TIF
                 if tif == 'IOC':
-                    order_config['order_configuration']['limit_limit_gtc']['post_only'] = False
+                    order_config = {
+                        'limit_limit_ioc': {
+                            'base_size': str(qty),
+                            'limit_price': str(limit_price),
+                        }
+                    }
                 elif tif == 'FOK':
-                    order_config['order_configuration']['limit_limit_gtc']['post_only'] = False
+                    order_config = {
+                        'limit_limit_fok': {
+                            'base_size': str(qty),
+                            'limit_price': str(limit_price),
+                        }
+                    }
+                else:  # GTC
+                    order_config = {
+                        'limit_limit_gtc': {
+                            'base_size': str(qty),
+                            'limit_price': str(limit_price),
+                            'post_only': kwargs.get('post_only', False),
+                        }
+                    }
 
             elif order_type.lower() == 'stop':
                 if stop_price is None:
                     raise ValueError("stop_price required for stop orders")
 
-                order_config['order_configuration'] = {
-                    'stop_limit_stop_limit_gtc': {
+                # Stop-limit: use stop_price as trigger, limit_price for execution
+                effective_limit = str(limit_price) if limit_price else str(stop_price)
+
+                if tif == 'IOC':
+                    config_key = 'stop_limit_stop_limit_ioc'
+                elif tif == 'FOK':
+                    config_key = 'stop_limit_stop_limit_fok'
+                else:
+                    config_key = 'stop_limit_stop_limit_gtc'
+
+                order_config = {
+                    config_key: {
                         'base_size': str(qty),
-                        'limit_price': str(limit_price or stop_price),
+                        'limit_price': effective_limit,
                         'stop_price': str(stop_price),
-                        'post_only': False
                     }
                 }
 
@@ -286,29 +317,32 @@ class CoinbaseBroker(IBroker):
                 raise ValueError(f"Unsupported order type: {order_type}")
 
             # Submit order
-            response = self.client.create_order(**order_config)
-            order_id = response.get('success_order_id') or response.get('order_id')
+            response = self.client.create_order(
+                client_order_id=kwargs.get('client_order_id'),
+                product_id=product_id,
+                side=side_lower,
+                order_configuration=order_config,
+            )
+
+            order_id = response.get('success_response', {}).get('order_id') or response.get('order_id')
 
             logger.info(
                 f"Order submitted: {order_id} - {side} {qty} {product_id} "
-                f"({order_type} @ {limit_price or stop_price or 'market'})"
+                f"({order_type}/{tif} @ {limit_price or stop_price or 'market'})"
             )
 
             return str(order_id)
 
         except Exception as e:
+            error_str = str(e).lower()
+            if '401' in error_str or 'unauthorized' in error_str:
+                self._last_connect_error = str(e)
+            elif '403' in error_str or 'forbidden' in error_str:
+                self._last_connect_error = str(e)
             logger.error(f"Failed to submit order: {e}")
             raise
 
     def cancel_order(self, order_id: str) -> bool:
-        """Cancel an order.
-
-        Args:
-            order_id: Order ID to cancel
-
-        Returns:
-            True if cancelled, False otherwise.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
@@ -324,21 +358,15 @@ class CoinbaseBroker(IBroker):
     def close_position(self, symbol: str) -> bool:
         """Close/liquidate the full position for a symbol.
 
-        Coinbase has no native close_position endpoint, so we emulate it
-        by submitting a market sell order for the full position quantity.
-
-        Args:
-            symbol: Trading symbol (e.g., 'BTC-USD')
-
-        Returns:
-            True if closed successfully, False otherwise.
+        Uses a market sell order with base_size (asset quantity).
         """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            # Get current position
-            position = self.get_position(symbol)
+            # Strip -USD suffix for position lookup
+            base_symbol = symbol.split('-')[0] if '-' in symbol else symbol
+            position = self.get_position(base_symbol)
             if not position:
                 logger.warning(f"No open position for {symbol}")
                 return False
@@ -348,13 +376,12 @@ class CoinbaseBroker(IBroker):
                 logger.warning(f"Position quantity is 0 for {symbol}")
                 return False
 
-            # Submit market sell order for the full quantity
             order_id = self.submit_order(
                 symbol=symbol,
                 qty=Decimal(str(qty)),
                 side='sell',
                 order_type='market',
-                time_in_force='IOC'  # Immediate Or Cancel
+                time_in_force='IOC'
             )
 
             logger.info(f"Position closed: {symbol} (order: {order_id})")
@@ -365,33 +392,21 @@ class CoinbaseBroker(IBroker):
             return False
 
     def cancel_all_orders(self, symbol: Optional[str] = None) -> List[str]:
-        """Cancel all open orders, optionally for a specific symbol.
-
-        Args:
-            symbol: Optional symbol to filter cancellations
-
-        Returns:
-            List of cancelled order IDs.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            # Get all open orders
             orders = self.get_orders(status='open')
 
-            # Filter by symbol if provided
             if symbol:
                 orders = [o for o in orders if o['symbol'] == symbol]
 
-            # Extract order IDs
             order_ids = [o['id'] for o in orders]
 
             if not order_ids:
                 logger.info(f"No open orders to cancel{' for ' + symbol if symbol else ''}")
                 return []
 
-            # Batch cancel (Coinbase supports up to 100 IDs per request)
             self.client.cancel_orders(order_ids=order_ids)
             logger.info(f"Cancelled {len(order_ids)} orders{' for ' + symbol if symbol else ''}")
             return order_ids
@@ -400,81 +415,65 @@ class CoinbaseBroker(IBroker):
             logger.error(f"Failed to cancel orders: {e}")
             return []
 
+    def _parse_order(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse a Coinbase order response into normalized format."""
+        # Extract quantity from order_configuration
+        qty = 0.0
+        order_config = order.get('order_configuration', {})
+        for config_type in order_config.values():
+            if isinstance(config_type, dict):
+                if 'base_size' in config_type:
+                    qty = float(config_type['base_size'])
+                    break
+                elif 'quote_size' in config_type:
+                    qty = float(config_type['quote_size'])
+                    break
+
+        return {
+            'id': str(order.get('order_id', '')),
+            'symbol': order.get('product_id', ''),
+            'qty': qty,
+            'filled_qty': float(order.get('filled_size', 0) or 0),
+            'side': order.get('side', 'unknown'),
+            'type': order.get('order_type', 'unknown'),
+            'status': order.get('status', 'unknown'),
+            'created_at': order.get('created_time'),
+            'filled_at': order.get('last_fill_time'),
+            'filled_avg_price': float(order.get('average_filled_price', 0) or 0) or None,
+        }
+
     def get_order(self, order_id: str) -> Dict[str, Any]:
-        """Get order details.
-
-        Args:
-            order_id: Order ID
-
-        Returns:
-            Order dictionary with details.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
             order = self.client.get_order(order_id)
-
-            return {
-                'id': str(order.get('order_id')),
-                'symbol': order.get('product_id'),
-                'qty': float(order.get('order_quantity', {}).get('base_size', 0)),
-                'filled_qty': float(order.get('filled_size', 0)),
-                'side': order.get('side', 'unknown'),
-                'type': order.get('order_type', 'unknown'),
-                'status': order.get('status', 'unknown'),
-                'created_at': order.get('created_time'),
-                'filled_at': order.get('time_in_force'),
-                'filled_avg_price': float(order.get('average_filled_price', 0)) if order.get('average_filled_price') else None,
-            }
+            if isinstance(order, dict) and 'order' in order:
+                order = order['order']
+            return self._parse_order(order)
 
         except Exception as e:
             logger.error(f"Failed to get order {order_id}: {e}")
             raise
 
     def get_orders(self, status: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get orders.
-
-        Args:
-            status: Filter by status ('open', 'closed', etc.)
-            limit: Maximum orders to return
-
-        Returns:
-            List of order dictionaries.
-        """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            # Coinbase API supports order status filtering
             order_status = None
             if status:
                 status_upper = status.upper()
                 if status_upper in ('OPEN', 'FILLED', 'CANCELLED', 'EXPIRED', 'FAILED'):
                     order_status = status_upper
 
-            # Fetch orders
-            orders = self.client.list_orders(
+            response = self.client.list_orders(
                 order_status=order_status,
                 limit=limit
             )
 
-            result = []
-            for order in orders.get('orders', []):
-                result.append({
-                    'id': str(order.get('order_id')),
-                    'symbol': order.get('product_id'),
-                    'qty': float(order.get('order_quantity', {}).get('base_size', 0)),
-                    'filled_qty': float(order.get('filled_size', 0)),
-                    'side': order.get('side', 'unknown'),
-                    'type': order.get('order_type', 'unknown'),
-                    'status': order.get('status', 'unknown'),
-                    'created_at': order.get('created_time'),
-                    'filled_at': order.get('time_in_force'),
-                    'filled_avg_price': float(order.get('average_filled_price', 0)) if order.get('average_filled_price') else None,
-                })
-
-            return result
+            orders_list = response.get('orders', []) if isinstance(response, dict) else response
+            return [self._parse_order(order) for order in (orders_list or [])]
 
         except Exception as e:
             logger.error(f"Failed to get orders: {e}")
@@ -483,15 +482,13 @@ class CoinbaseBroker(IBroker):
     def get_account_snapshot(self) -> Dict[str, Any]:
         """Get normalized account snapshot.
 
-        Coinbase holds multiple crypto currencies. We fetch spot prices
-        from Coinbase's own API to convert everything to USD — the same
-        approach 3Commas and Cryptohopper use.
+        Uses cached spot prices to stay within rate limits.
         """
         if not self._connected:
             raise RuntimeError("Not connected to broker")
 
         try:
-            accounts = self.client.get_accounts()
+            accounts = self._parse_accounts(self.client.get_accounts())
 
             total_equity = Decimal('0')
             total_cash = Decimal('0')
@@ -512,12 +509,10 @@ class CoinbaseBroker(IBroker):
                     continue
 
                 if currency in stablecoins:
-                    # Stablecoins / fiat — already USD-equivalent
                     usd_value = float(total_balance)
                     total_cash += total_balance
                     total_equity += total_balance
                 else:
-                    # Crypto — fetch spot price from Coinbase
                     usd_price = self._get_spot_price(currency)
                     usd_value = float(total_balance) * usd_price
                     total_equity += Decimal(str(usd_value))
@@ -529,7 +524,7 @@ class CoinbaseBroker(IBroker):
                             'avg_entry_price': 0.0,  # Coinbase doesn't provide cost basis via API
                             'current_price': usd_price,
                             'market_value': usd_value,
-                            'unrealized_pnl': 0.0,  # No cost basis available
+                            'unrealized_pnl': 0.0,
                             'unrealized_pnl_pct': 0.0,
                             'currency': currency,
                         })
@@ -542,39 +537,11 @@ class CoinbaseBroker(IBroker):
                 'positions': positions,
             }
         except Exception as e:
+            error_str = str(e).lower()
+            if '401' in error_str or '403' in error_str or 'unauthorized' in error_str or 'forbidden' in error_str:
+                self._last_connect_error = str(e)
             logger.error(f"Failed to get account snapshot: {e}")
             raise
 
-    def _get_spot_price(self, currency: str) -> float:
-        """Get current USD spot price for a crypto currency.
-
-        Uses Coinbase's product ticker endpoint.
-
-        Args:
-            currency: Crypto symbol (e.g. 'BTC', 'ETH')
-
-        Returns:
-            USD price as float, or 0.0 if unavailable.
-        """
-        try:
-            product_id = f"{currency}-USD"
-            ticker = self.client.get_product(product_id)
-            return float(ticker.get('price', 0))
-        except Exception:
-            # Some obscure tokens may not have a USD pair
-            try:
-                # Try via USDC pair as fallback
-                product_id = f"{currency}-USDC"
-                ticker = self.client.get_product(product_id)
-                return float(ticker.get('price', 0))
-            except Exception:
-                logger.debug(f"No USD price available for {currency}")
-                return 0.0
-
     def get_environment(self) -> Environment:
-        """Get current trading environment.
-
-        Returns:
-            Environment enum.
-        """
         return self.environment

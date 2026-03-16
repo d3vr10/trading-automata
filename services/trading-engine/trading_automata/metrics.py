@@ -56,3 +56,9 @@ engine_bot_setup_duration_seconds = Histogram(
     ["bot_name", "broker"],
     buckets=(0.5, 1, 2, 5, 10, 30, 60, 120),
 )
+
+engine_warmup_failures_total = Counter(
+    "engine_warmup_failures_total",
+    "Strategy warm-up failures by reason",
+    ["strategy", "symbol", "reason"],
+)

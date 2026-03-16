@@ -137,7 +137,11 @@ async def get_account_snapshots(
         raw = await redis_client.get(key)
         if not raw:
             continue
-        snapshot = json.loads(raw)
+        try:
+            snapshot = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"Corrupted snapshot at {key}: {e}")
+            continue
         # Extract bot name from key: bot:{user_id}:{bot_name}:account
         parts = key.split(":")
         bot_name = ":".join(parts[2:-1])  # Handle bot names with colons

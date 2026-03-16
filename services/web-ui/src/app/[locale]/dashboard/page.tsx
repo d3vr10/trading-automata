@@ -241,7 +241,10 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
                       <h3 className="font-semibold truncate">{botName}</h3>
-                      <span className="text-[11px] text-muted-foreground">{acc.broker_type} / {acc.currency}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {acc.broker_type}
+                        {acc.positions?.length > 0 && ` \u00b7 ${acc.positions.length} position${acc.positions.length !== 1 ? "s" : ""}`}
+                      </span>
                     </div>
                     <Badge
                       variant={isPaused ? "secondary" : isRunning ? "default" : "destructive"}
