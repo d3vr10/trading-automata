@@ -312,10 +312,11 @@
       "credentialSaved": "Credencial guardada",
       "credentialDeleted": "Credencial eliminada",
       "keysRotated": "Claves API actualizadas correctamente",
+      "keysRotatedWithRestart": "Claves rotadas. Reiniciando bots: {bots}",
       "rotateKeys": "Rotar Claves",
       "rotateDescription": "Actualiza las claves API de \"{label}\". Solo completa los campos que deseas cambiar.",
       "rotateKeepExisting": "Dejar vacío para mantener actual",
-      "rotateHint": "Después de rotar, reinicia los bots que usen esta credencial para aplicar las nuevas claves.",
+      "rotateHintAuto": "Los bots activos que usen esta credencial se reiniciarán automáticamente con las nuevas claves.",
       "dialog": {
         "title": "Agregar Credenciales del Bróker",
         "brokerType": "Bróker",

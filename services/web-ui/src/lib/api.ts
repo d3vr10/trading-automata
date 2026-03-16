@@ -613,7 +613,7 @@ export async function updateCredential(
   credentialId: number,
   data: { api_key?: string; secret_key?: string; passphrase?: string; label?: string },
 ) {
-  return request<BrokerCredential>(`/api/broker-credentials/${credentialId}`, {
+  return request<{ credential: BrokerCredential; restarted_bots: string[] }>(`/api/broker-credentials/${credentialId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });

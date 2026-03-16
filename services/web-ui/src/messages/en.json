@@ -317,10 +317,11 @@
       "credentialSaved": "Credential saved",
       "credentialDeleted": "Credential deleted",
       "keysRotated": "API keys updated successfully",
+      "keysRotatedWithRestart": "Keys rotated. Restarting bots: {bots}",
       "rotateKeys": "Rotate Keys",
       "rotateDescription": "Update the API keys for \"{label}\". Only fill in the fields you want to change.",
       "rotateKeepExisting": "Leave blank to keep current",
-      "rotateHint": "After rotating, restart any bots using this credential to apply the new keys.",
+      "rotateHintAuto": "Running bots using this credential will be automatically restarted with the new keys.",
       "dialog": {
         "title": "Add Broker Credentials",
         "brokerType": "Broker",

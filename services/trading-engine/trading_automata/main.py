@@ -16,7 +16,11 @@ import sys
 
 import sentry_sdk
 
-from trading_automata.monitoring.logger import get_logger
+from trading_automata.monitoring.logger import setup_logging, get_logger
+
+# Initialize logging before anything else
+_log_level = os.environ.get("LOG_LEVEL", "INFO")
+setup_logging(level=_log_level, log_file="logs/trading-automata.log")
 
 logger = get_logger(__name__)
 

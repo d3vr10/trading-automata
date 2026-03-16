@@ -32,7 +32,7 @@ RUN mkdir -p logs
 # Fix CRLF line endings (Windows Git checkout) and make executable
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import os; os.path.exists('logs/trading-automata.log') or exit(1)"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')" || exit 1
 
 ENTRYPOINT ["./entrypoint.sh"]

@@ -412,6 +412,7 @@ class BotOrchestrator:
         self._command_listener.register_handler("pause_bot", self._handle_pause_bot)
         self._command_listener.register_handler("resume_bot", self._handle_resume_bot)
         self._command_listener.register_handler("stop_bot", self._handle_stop_bot)
+        self._command_listener.register_handler("restart_bot", self._handle_restart_bot)
         self._command_listener.register_handler("get_status", self._handle_get_status)
         self._command_listener.register_handler("run_backtest", self._handle_run_backtest)
         logger.debug("Command handlers registered")
@@ -595,6 +596,35 @@ class BotOrchestrator:
                 user_id=user_id,
             )
         return {"bot_name": bot_name, "status": "already_stopped"}
+
+    async def _handle_restart_bot(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle restart_bot command — stop then start with fresh config.
+
+        Used by credential rotation to seamlessly apply new keys.
+        """
+        bot_name = data.get("bot_name", "")
+        user_id = data.get("user_id")
+
+        # Stop the running bot first
+        if bot_name in self.bot_registry:
+            logger.info(f"Restarting bot '{bot_name}' (credential rotation)")
+            self.bot_registry[bot_name].stop()
+            if self._event_publisher:
+                await self._event_publisher.update_bot_status(
+                    bot_name, {"running": False, "paused": False, "restarting": True,
+                               "error": None},
+                    user_id=user_id,
+                )
+
+            # Wait briefly for the bot's trading loop to exit
+            await asyncio.sleep(2)
+
+            # Remove from registry so start_bot can re-create it
+            self.bot_registry.pop(bot_name, None)
+            self.bot_instances = [b for b in self.bot_instances if b.bot_name != bot_name]
+
+        # Start with the fresh config (which has new credentials from API)
+        return await self._handle_start_bot(data)
 
     async def _handle_get_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
         bot_name = data.get("bot_name")

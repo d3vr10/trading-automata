@@ -90,12 +90,16 @@ export default function BrokersPage() {
     if (!rotateTarget) return;
     setRotating(true);
     try {
-      await updateCredential(rotateTarget.id, {
+      const result = await updateCredential(rotateTarget.id, {
         api_key: rotateApiKey || undefined,
         secret_key: rotateSecretKey || undefined,
         passphrase: rotatePassphrase || undefined,
       });
-      toast.success(t("brokers.keysRotated"));
+      if (result.restarted_bots.length > 0) {
+        toast.success(t("brokers.keysRotatedWithRestart", { bots: result.restarted_bots.join(", ") }));
+      } else {
+        toast.success(t("brokers.keysRotated"));
+      }
       setRotateTarget(null);
       setRotateApiKey("");
       setRotateSecretKey("");
@@ -259,7 +263,7 @@ export default function BrokersPage() {
                 <Input type="password" value={rotatePassphrase} onChange={(e) => setRotatePassphrase(e.target.value)} placeholder={t("brokers.rotateKeepExisting")} className="h-10 bg-input/50 border-border/50 rounded-xl" />
               </div>
             )}
-            <p className="text-xs text-muted-foreground">{t("brokers.rotateHint")}</p>
+            <p className="text-xs text-muted-foreground">{t("brokers.rotateHintAuto")}</p>
             <Button type="submit" className="w-full rounded-xl glow-accent" disabled={rotating || (!rotateApiKey && !rotateSecretKey && !rotatePassphrase)}>
               {rotating ? t("brokers.dialog.saving") : t("brokers.rotateKeys")}
             </Button>

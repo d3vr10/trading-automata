@@ -12,10 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.models import BrokerCredential, User
+from app.models import BrokerCredential, BotConfiguration, User
 from app.metrics import credential_operations_total
 from app.services.audit_service import log_action
-from app.services.credential_service import encrypt_credential
+from app.services.credential_service import encrypt_credential, decrypt_credential
+from app.routers.bots import get_redis
+from app.services import bot_service
 
 router = APIRouter(prefix="/api/broker-credentials", tags=["broker-credentials"])
 
@@ -116,15 +118,25 @@ async def create_credential(
     )
 
 
-@router.put("/{credential_id}", response_model=CredentialResponse)
+class RotateCredentialResponse(BaseModel):
+    credential: CredentialResponse
+    restarted_bots: list[str]
+
+
+@router.put("/{credential_id}", response_model=RotateCredentialResponse)
 async def update_credential(
     credential_id: int,
     body: UpdateCredentialRequest,
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[object, Depends(get_redis)],
 ):
-    """Update broker credential keys (for key rotation)."""
+    """Update broker credential keys (for key rotation).
+
+    Automatically restarts any running bots that use this credential
+    so they pick up the new keys without manual intervention.
+    """
     result = await db.execute(
         select(BrokerCredential).where(
             BrokerCredential.id == credential_id,
@@ -162,13 +174,75 @@ async def update_credential(
         "User %d rotated credential '%s' (id=%d, fields=%s)",
         current_user.id, cred.label, cred.id, changed_fields,
     )
-    return CredentialResponse(
-        id=cred.id,
-        broker_type=cred.broker_type,
-        environment=cred.environment,
-        label=cred.label,
-        api_key_masked=_mask_key(cred.encrypted_api_key),
+
+    # Auto-restart running bots that use this credential
+    restarted_bots = []
+    keys_changed = any(f in changed_fields for f in ("api_key", "secret_key", "passphrase"))
+    if keys_changed:
+        restarted_bots = await _restart_bots_for_credential(
+            db, redis_client, cred, current_user.id,
+        )
+
+    return RotateCredentialResponse(
+        credential=CredentialResponse(
+            id=cred.id,
+            broker_type=cred.broker_type,
+            environment=cred.environment,
+            label=cred.label,
+            api_key_masked=_mask_key(cred.encrypted_api_key),
+        ),
+        restarted_bots=restarted_bots,
     )
+
+
+async def _restart_bots_for_credential(
+    db: AsyncSession,
+    redis_client,
+    cred: BrokerCredential,
+    user_id: int,
+) -> list[str]:
+    """Find running bots using this credential and restart them."""
+    result = await db.execute(
+        select(BotConfiguration).where(
+            BotConfiguration.credential_id == cred.id,
+            BotConfiguration.user_id == user_id,
+            BotConfiguration.desired_state.in_(["running", "paused"]),
+        )
+    )
+    bots = result.scalars().all()
+    if not bots:
+        return []
+
+    restarted = []
+    for bot in bots:
+        try:
+            config = {
+                "broker_type": cred.broker_type,
+                "environment": cred.environment,
+                "api_key": decrypt_credential(cred.encrypted_api_key),
+                "secret_key": decrypt_credential(cred.encrypted_secret_key),
+                "passphrase": decrypt_credential(cred.encrypted_passphrase) if cred.encrypted_passphrase else "",
+                "allocation": float(bot.allocation),
+                "fence_type": bot.fence_type,
+                "stop_loss_pct": bot.stop_loss_pct,
+                "take_profit_pct": bot.take_profit_pct,
+                "max_position_size": bot.max_position_size,
+            }
+            import json
+            command = {
+                "action": "restart_bot",
+                "bot_name": bot.name,
+                "user_id": user_id,
+                "config": config,
+                "request_id": f"rotate-{cred.id}-{bot.name}",
+            }
+            await redis_client.publish("engine:commands", json.dumps(command))
+            restarted.append(bot.name)
+            logger.info(f"Sent restart command for bot '{bot.name}' after credential rotation")
+        except Exception as e:
+            logger.warning(f"Failed to restart bot '{bot.name}' after rotation: {e}")
+
+    return restarted
 
 
 @router.delete("/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
