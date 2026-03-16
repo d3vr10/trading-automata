@@ -14,6 +14,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _g(obj, key, default=None):
+    """Safely get a value from a dict or SDK response object.
+
+    The coinbase-advanced-py SDK returns response objects that support
+    bracket access (obj['key'] -> None if missing) but NOT .get().
+    """
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        val = obj[key]
+        return val if val is not None else default
+    except (KeyError, TypeError, IndexError):
+        return default
+
+
 class CoinbaseBroker(IBroker):
     """Coinbase broker implementation.
 
@@ -57,9 +74,10 @@ class CoinbaseBroker(IBroker):
             accounts = self.client.get_accounts()
             self._connected = True
 
+            account_list = self._parse_accounts(accounts)
             logger.info(
                 f"Connected to Coinbase (LIVE trading). "
-                f"Accounts: {len(accounts.get('accounts', []) if isinstance(accounts, dict) else accounts)}"
+                f"Accounts: {len(account_list)}"
             )
             return True
 
@@ -83,14 +101,14 @@ class CoinbaseBroker(IBroker):
         try:
             product_id = f"{currency}-USD"
             ticker = self.client.get_product(product_id)
-            price = float(ticker.get('price', 0))
+            price = float(_g(ticker, 'price', 0))
             self._price_cache[currency] = (price, now)
             return price
         except Exception:
             try:
                 product_id = f"{currency}-USDC"
                 ticker = self.client.get_product(product_id)
-                price = float(ticker.get('price', 0))
+                price = float(_g(ticker, 'price', 0))
                 self._price_cache[currency] = (price, now)
                 return price
             except Exception:
@@ -98,10 +116,16 @@ class CoinbaseBroker(IBroker):
                 return 0.0
 
     def _parse_accounts(self, accounts_response) -> list:
-        """Extract account list from API response (handles dict or list)."""
+        """Extract account list from API response (handles SDK object, dict, or list)."""
         if isinstance(accounts_response, dict):
             return accounts_response.get('accounts', [])
-        return accounts_response if accounts_response else []
+        if isinstance(accounts_response, list):
+            return accounts_response
+        # SDK response object (e.g. ListAccountsResponse) — try .accounts attribute
+        if hasattr(accounts_response, 'accounts'):
+            accts = accounts_response.accounts
+            return list(accts) if accts else []
+        return []
 
     def get_account(self) -> Dict[str, Any]:
         if not self._connected:
@@ -114,9 +138,9 @@ class CoinbaseBroker(IBroker):
             stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
 
             for account in accounts:
-                currency = account.get('currency', '')
-                available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
-                hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                currency = _g(account, 'currency', '')
+                available = Decimal(str(_g(_g(account, 'available_balance'), 'value', '0')))
+                hold = Decimal(str(_g(_g(account, 'hold'), 'value', '0')))
                 total_balance = available + hold
 
                 if total_balance <= 0:
@@ -130,7 +154,7 @@ class CoinbaseBroker(IBroker):
                     total_value += Decimal(str(float(total_balance) * usd_price))
 
             return {
-                'account_id': accounts[0].get('uuid', 'unknown') if accounts else 'unknown',
+                'account_id': _g(accounts[0], 'uuid', 'unknown') if accounts else 'unknown',
                 'portfolio_value': float(total_value),
                 'buying_power': float(total_cash),
                 'cash': float(total_cash),
@@ -151,9 +175,9 @@ class CoinbaseBroker(IBroker):
             stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
 
             for account in accounts:
-                currency = account.get('currency', '')
-                available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
-                hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                currency = _g(account, 'currency', '')
+                available = Decimal(str(_g(_g(account, 'available_balance'), 'value', '0')))
+                hold = Decimal(str(_g(_g(account, 'hold'), 'value', '0')))
                 total_balance = available + hold
 
                 if total_balance <= 0 or currency in stablecoins:
@@ -186,9 +210,9 @@ class CoinbaseBroker(IBroker):
             accounts = self._parse_accounts(self.client.get_accounts())
 
             for account in accounts:
-                if account.get('currency') == symbol:
-                    available = Decimal(str(account.get('available_balance', {}).get('value', '0')))
-                    hold = Decimal(str(account.get('hold', {}).get('value', '0')))
+                if _g(account, 'currency') == symbol:
+                    available = Decimal(str(_g(_g(account, 'available_balance'), 'value', '0')))
+                    hold = Decimal(str(_g(_g(account, 'hold'), 'value', '0')))
                     total_balance = available + hold
 
                     if total_balance > 0:
@@ -324,7 +348,7 @@ class CoinbaseBroker(IBroker):
                 order_configuration=order_config,
             )
 
-            order_id = response.get('success_response', {}).get('order_id') or response.get('order_id')
+            order_id = _g(_g(response, 'success_response'), 'order_id') or _g(response, 'order_id')
 
             logger.info(
                 f"Order submitted: {order_id} - {side} {qty} {product_id} "
@@ -419,27 +443,34 @@ class CoinbaseBroker(IBroker):
         """Parse a Coinbase order response into normalized format."""
         # Extract quantity from order_configuration
         qty = 0.0
-        order_config = order.get('order_configuration', {})
-        for config_type in order_config.values():
-            if isinstance(config_type, dict):
-                if 'base_size' in config_type:
-                    qty = float(config_type['base_size'])
-                    break
-                elif 'quote_size' in config_type:
-                    qty = float(config_type['quote_size'])
-                    break
+        order_config = _g(order, 'order_configuration', {})
+        if isinstance(order_config, dict):
+            config_items = order_config.values()
+        elif hasattr(order_config, '__dict__'):
+            config_items = [v for v in vars(order_config).values() if v is not None]
+        else:
+            config_items = []
+        for config_type in config_items:
+            base = _g(config_type, 'base_size')
+            if base is not None:
+                qty = float(base)
+                break
+            quote = _g(config_type, 'quote_size')
+            if quote is not None:
+                qty = float(quote)
+                break
 
         return {
-            'id': str(order.get('order_id', '')),
-            'symbol': order.get('product_id', ''),
+            'id': str(_g(order, 'order_id', '')),
+            'symbol': _g(order, 'product_id', ''),
             'qty': qty,
-            'filled_qty': float(order.get('filled_size', 0) or 0),
-            'side': order.get('side', 'unknown'),
-            'type': order.get('order_type', 'unknown'),
-            'status': order.get('status', 'unknown'),
-            'created_at': order.get('created_time'),
-            'filled_at': order.get('last_fill_time'),
-            'filled_avg_price': float(order.get('average_filled_price', 0) or 0) or None,
+            'filled_qty': float(_g(order, 'filled_size', 0) or 0),
+            'side': _g(order, 'side', 'unknown'),
+            'type': _g(order, 'order_type', 'unknown'),
+            'status': _g(order, 'status', 'unknown'),
+            'created_at': _g(order, 'created_time'),
+            'filled_at': _g(order, 'last_fill_time'),
+            'filled_avg_price': float(_g(order, 'average_filled_price', 0) or 0) or None,
         }
 
     def get_order(self, order_id: str) -> Dict[str, Any]:
@@ -448,8 +479,9 @@ class CoinbaseBroker(IBroker):
 
         try:
             order = self.client.get_order(order_id)
-            if isinstance(order, dict) and 'order' in order:
-                order = order['order']
+            inner = _g(order, 'order')
+            if inner is not None:
+                order = inner
             return self._parse_order(order)
 
         except Exception as e:
@@ -472,8 +504,10 @@ class CoinbaseBroker(IBroker):
                 limit=limit
             )
 
-            orders_list = response.get('orders', []) if isinstance(response, dict) else response
-            return [self._parse_order(order) for order in (orders_list or [])]
+            orders_list = _g(response, 'orders') or []
+            if not isinstance(orders_list, list) and hasattr(orders_list, '__iter__'):
+                orders_list = list(orders_list)
+            return [self._parse_order(order) for order in orders_list]
 
         except Exception as e:
             logger.error(f"Failed to get orders: {e}")
@@ -496,12 +530,12 @@ class CoinbaseBroker(IBroker):
             stablecoins = {'USD', 'USDC', 'USDT', 'DAI', 'BUSD'}
 
             for account in accounts:
-                currency = account.get('currency', '')
+                currency = _g(account, 'currency', '')
                 available = Decimal(str(
-                    account.get('available_balance', {}).get('value', '0')
+                    _g(_g(account, 'available_balance'), 'value', '0')
                 ))
                 hold = Decimal(str(
-                    account.get('hold', {}).get('value', '0')
+                    _g(_g(account, 'hold'), 'value', '0')
                 ))
                 total_balance = available + hold
 
