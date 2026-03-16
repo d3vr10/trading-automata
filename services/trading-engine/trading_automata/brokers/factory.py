@@ -49,17 +49,17 @@ class BrokerFactory:
             }
 
         elif broker_type == 'coinbase':
-            if (not settings.coinbase_api_key or
-                not settings.coinbase_secret_key or
-                not settings.coinbase_passphrase):
+            if not settings.coinbase_api_key or not settings.coinbase_secret_key:
                 raise ValueError(
-                    "Coinbase broker requires COINBASE_API_KEY, COINBASE_SECRET_KEY, and COINBASE_PASSPHRASE"
+                    "Coinbase broker requires COINBASE_API_KEY and COINBASE_SECRET_KEY"
                 )
-            return {
+            creds = {
                 'api_key': settings.coinbase_api_key,
                 'secret_key': settings.coinbase_secret_key,
-                'passphrase': settings.coinbase_passphrase,
             }
+            if settings.coinbase_passphrase:
+                creds['passphrase'] = settings.coinbase_passphrase
+            return creds
 
         else:
             raise ValueError(
@@ -100,15 +100,15 @@ class BrokerFactory:
             return RateLimitedBroker(broker, max_retries=3, base_delay=1.0, bot_name=bot_name)
 
         elif broker_type == 'coinbase':
-            if 'api_key' not in config or 'secret_key' not in config or 'passphrase' not in config:
+            if 'api_key' not in config or 'secret_key' not in config:
                 raise ValueError(
-                    "Coinbase broker requires 'api_key', 'secret_key', and 'passphrase' in config"
+                    "Coinbase broker requires 'api_key' and 'secret_key' in config"
                 )
             logger.info(f"Creating Coinbase broker ({environment.value} mode)")
             broker = CoinbaseBroker(
                 api_key=config['api_key'],
                 secret_key=config['secret_key'],
-                passphrase=config['passphrase'],
+                passphrase=config.get('passphrase', ''),
                 environment=environment
             )
             return RateLimitedBroker(broker, max_retries=3, base_delay=1.0, bot_name=bot_name)
