@@ -27,6 +27,7 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "H1–H4",
         "indicators": ["Bollinger Bands", "SMA(20)"],
         "asset_classes": ["stocks", "crypto", "forex"],
+        "asset_optimization": "stocks",
         "long_only": False,
     },
     {
@@ -45,6 +46,7 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "H4–D1",
         "indicators": ["Price Momentum", "Rate of Change"],
         "asset_classes": ["stocks", "crypto", "forex"],
+        "asset_optimization": "stocks",
         "long_only": False,
     },
     {
@@ -63,6 +65,7 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "H1–D1",
         "indicators": ["RSI(14)", "EMA(9/21)", "ATR(14)", "Support/Resistance"],
         "asset_classes": ["stocks", "crypto", "forex", "commodities"],
+        "asset_optimization": "stocks",
         "long_only": False,
     },
     {
@@ -82,6 +85,7 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "M5–M15",
         "indicators": ["VWAP", "EMA(8/21)", "RSI(7)", "ATR(7)", "Volume"],
         "asset_classes": ["stocks", "crypto"],
+        "asset_optimization": "stocks",
         "long_only": False,
         "series": "sigma",
     },
@@ -102,6 +106,7 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "H1–H4",
         "indicators": ["Bollinger Bands", "RSI(14)", "ATR(14)", "EMA(20/50)"],
         "asset_classes": ["stocks", "crypto", "forex"],
+        "asset_optimization": "stocks",
         "long_only": False,
         "series": "sigma",
     },
@@ -122,25 +127,55 @@ STRATEGY_CATALOG: list[dict] = [
         "recommended_timeframe": "H4–D1",
         "indicators": ["EMA(21/50/200)", "ADX(14)", "RSI(10)", "MACD(12,26,9)", "ATR(14)"],
         "asset_classes": ["stocks", "crypto"],
+        "asset_optimization": "stocks",
+        "long_only": True,
+        "series": "sigma",
+    },
+    {
+        "id": "sigma_alpha_bull_crypto",
+        "class_name": "SigmaSeriesAlphaBullCryptoStrategy",
+        "name": "Sigma Alpha Bull Crypto",
+        "short_description": "Crypto-tuned bull market trend following.",
+        "description": (
+            "Adapted from Sigma Alpha Bull with parameters tuned for "
+            "cryptocurrency volatility: wider RSI zones (25-50 entry, 78 exit), "
+            "lower ADX threshold (20), wider ATR stops (1.5x) and targets (5x), "
+            "and longer cooldowns to avoid whipsaws. Long-only — designed for "
+            "crypto bull markets on BTC, ETH, SOL, and other major coins."
+        ),
+        "category": "trend-following",
+        "risk_level": "medium",
+        "target_win_rate": 90.0,
+        "recommended_timeframe": "H1–H4",
+        "indicators": ["EMA(21/50/200)", "ADX(14)", "RSI(10)", "MACD(12,26,9)", "ATR(14)"],
+        "asset_classes": ["crypto"],
+        "asset_optimization": "crypto",
         "long_only": True,
         "series": "sigma",
     },
 ]
+
+# Maps broker_type to compatible asset_optimization values
+BROKER_ASSET_COMPATIBILITY: dict[str, list[str]] = {
+    "alpaca": ["generic", "stocks"],
+    "coinbase": ["generic", "crypto"],
+}
 
 # Lookup by class_name for quick access
 _CATALOG_BY_CLASS = {s["class_name"]: s for s in STRATEGY_CATALOG}
 _CATALOG_BY_ID = {s["id"]: s for s in STRATEGY_CATALOG}
 
 
-async def list_strategies(db: AsyncSession, user_id: int | None = None) -> list[dict]:
+async def list_strategies(
+    db: AsyncSession,
+    user_id: int | None = None,
+    broker_type: str | None = None,
+) -> list[dict]:
     """Return full strategy catalog enriched with live stats from the DB.
 
-    Stats per strategy:
-    - active_bots: number of open positions grouped by strategy
-    - total_trades: lifetime trade count
-    - win_rate: actual win rate from closed trades
-    - total_pnl: lifetime net P&L
-    - popularity_rank: 1-based rank by total_trades (descending)
+    Args:
+        broker_type: If provided, filter strategies to those compatible
+                     with this broker's asset class.
     """
     # Query trade stats grouped by strategy
     trade_stats_q = (
@@ -171,9 +206,16 @@ async def list_strategies(db: AsyncSession, user_id: int | None = None) -> list[
     pos_result = await db.execute(pos_stats_q)
     pos_stats = {row.strategy: row.active_positions for row in pos_result.all()}
 
+    # Filter by broker compatibility if requested
+    if broker_type:
+        allowed = BROKER_ASSET_COMPATIBILITY.get(broker_type.lower(), ["generic"])
+        catalog = [s for s in STRATEGY_CATALOG if s.get("asset_optimization", "generic") in allowed]
+    else:
+        catalog = STRATEGY_CATALOG
+
     # Enrich catalog with stats
     enriched = []
-    for entry in STRATEGY_CATALOG:
+    for entry in catalog:
         item = {**entry}
 
         # Match by strategy column (could be class_name or strategy name)
@@ -198,7 +240,8 @@ async def list_strategies(db: AsyncSession, user_id: int | None = None) -> list[
         item["stats"]["popularity_rank"] = rank
 
     # Re-sort by catalog order for stable output
-    enriched.sort(key=lambda s: next(i for i, c in enumerate(STRATEGY_CATALOG) if c["id"] == s["id"]))
+    catalog_order = {c["id"]: i for i, c in enumerate(STRATEGY_CATALOG)}
+    enriched.sort(key=lambda s: catalog_order.get(s["id"], 999))
 
     return enriched
 

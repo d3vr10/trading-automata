@@ -84,6 +84,7 @@
     "winRateLabel": "Win Rate",
     "totalPnl": "Total P&L",
     "activePositions": "Active Positions",
+    "searchPlaceholder": "Search strategies...",
     "noStrategies": "No strategies found",
     "riskLow": "Low Risk",
     "riskMedium": "Medium Risk",
@@ -194,7 +195,11 @@
       "create": "Create Bot",
       "creating": "Creating...",
       "cancel": "Cancel",
-      "validationError": "Please select a strategy and broker credential",
+      "tradingPairs": "Trading Pairs",
+      "selectPairs": "Select which assets the bot will trade",
+      "selected": "selected",
+      "minOrderSize": "Min. order size",
+      "validationError": "Please select a strategy, broker credential, and at least one trading pair",
       "botCreated": "Bot ''{name}'' created successfully"
     }
   },

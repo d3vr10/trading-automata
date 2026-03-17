@@ -298,9 +298,8 @@ class SigmaSeriesAlphaStrategy(BaseStrategy):
         return atr
 
     def _calculate_qty(self, bar: Bar) -> float:
-        """Calculate position size based on price and risk."""
-        # Simple fixed quantity for now
-        return 1.0
+        """Calculate position size from config, default to 1.0."""
+        return float(self.config.get('position_size', 1.0))
 
     def get_stats(self) -> Dict[str, Any]:
         """Get strategy statistics."""

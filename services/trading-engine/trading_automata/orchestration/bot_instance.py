@@ -206,16 +206,27 @@ class BotInstance:
             self.logger.debug(f"Registering built-in strategy classes...")
             self._register_strategies()
 
-            # Load strategies from config
-            self.logger.info(f"Loading strategies from {self.config.strategy_config}...")
-            strategies = StrategyRegistry.load_from_config(
-                config_path=self.config.strategy_config,
-                event_logger=self.event_logger,
-            )
-            self.strategies = [s for s in strategies if s]
+            # Load strategy — either from class_name + symbols (API-created bot)
+            # or from YAML config (legacy / config-file bots)
+            if self.config.strategy_class_name and self.config.symbols:
+                self.logger.info(f"Creating strategy {self.config.strategy_class_name} for symbols {self.config.symbols}")
+                strategy_class = StrategyRegistry.get(self.config.strategy_class_name)
+                strategy = strategy_class(
+                    name=self.config.strategy_class_name,
+                    config={"symbols": self.config.symbols},
+                    event_logger=self.event_logger,
+                )
+                self.strategies = [strategy]
+            else:
+                self.logger.info(f"Loading strategies from {self.config.strategy_config}...")
+                strategies = StrategyRegistry.load_from_config(
+                    config_path=self.config.strategy_config,
+                    event_logger=self.event_logger,
+                )
+                self.strategies = [s for s in strategies if s]
 
             if not self.strategies:
-                self.setup_error = f"No strategies loaded from {self.config.strategy_config}"
+                self.setup_error = f"No strategies loaded"
                 self.logger.error(self.setup_error)
                 return False
 
@@ -393,7 +404,7 @@ class BotInstance:
                 "high": float(bar.high),
                 "low": float(bar.low),
                 "close": float(bar.close),
-                "volume": int(bar.volume) if bar.volume else 0,
+                "volume": float(bar.volume) if bar.volume else 0,
             },
             bot_name=self.bot_name,
         )
@@ -686,6 +697,7 @@ class BotInstance:
         from trading_automata.strategies.sigma_series.sigma_fast import SigmaSeriesFastStrategy
         from trading_automata.strategies.sigma_series.sigma_alpha import SigmaSeriesAlphaStrategy
         from trading_automata.strategies.sigma_series.sigma_alpha_bull import SigmaSeriesAlphaBullStrategy
+        from trading_automata.strategies.sigma_series.sigma_alpha_bull_crypto import SigmaSeriesAlphaBullCryptoStrategy
 
         StrategyRegistry.register('MeanReversionStrategy', MeanReversionStrategy)
         StrategyRegistry.register('MomentumStrategy', MomentumStrategy)
@@ -693,6 +705,7 @@ class BotInstance:
         StrategyRegistry.register('SigmaSeriesFastStrategy', SigmaSeriesFastStrategy)
         StrategyRegistry.register('SigmaSeriesAlphaStrategy', SigmaSeriesAlphaStrategy)
         StrategyRegistry.register('SigmaSeriesAlphaBullStrategy', SigmaSeriesAlphaBullStrategy)
+        StrategyRegistry.register('SigmaSeriesAlphaBullCryptoStrategy', SigmaSeriesAlphaBullCryptoStrategy)
 
     def _set_paused(self, paused: bool) -> None:
         """Set pause state."""

@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ArrowLeft, Check, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import {
-  listStrategies, listCredentials, createBot,
-  type Strategy, type BrokerCredential,
+  listStrategies, listCredentials, createBot, listTradingPairs, getBrokerInfo,
+  type Strategy, type BrokerCredential, type TradingPair, type BrokerInfo,
 } from "@/lib/api";
 import { ProgressRing } from "@/components/charts/progress-ring";
 import {
@@ -37,26 +37,53 @@ export default function NewBotPage() {
   const [takeProfit, setTakeProfit] = useState("6.0");
   const [maxPositionSize, setMaxPositionSize] = useState("0.1");
 
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
+  const [tradingPairs, setTradingPairs] = useState<TradingPair[]>([]);
+  const [brokerInfo, setBrokerInfo] = useState<BrokerInfo | null>(null);
+
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [credentials, setCredentials] = useState<BrokerCredential[]>([]);
   const [loadingStrategies, setLoadingStrategies] = useState(true);
   const [loadingCredentials, setLoadingCredentials] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const selectedCredential = credentials.find((c) => String(c.id) === credentialId);
+
   useEffect(() => {
-    listStrategies()
-      .then(setStrategies)
-      .catch(() => setStrategies([]))
-      .finally(() => setLoadingStrategies(false));
     listCredentials()
       .then(setCredentials)
       .catch(() => setCredentials([]))
       .finally(() => setLoadingCredentials(false));
   }, []);
 
+  // Reload strategies when broker credential changes
+  useEffect(() => {
+    setLoadingStrategies(true);
+    const brokerType = selectedCredential?.broker_type;
+    listStrategies(brokerType)
+      .then(setStrategies)
+      .catch(() => setStrategies([]))
+      .finally(() => setLoadingStrategies(false));
+    // Clear strategy/symbol selection when broker changes
+    setSelectedStrategy(null);
+    setSelectedSymbols([]);
+  }, [credentialId, selectedCredential?.broker_type]);
+
+  // Load trading pairs and broker info when broker changes
+  useEffect(() => {
+    const brokerType = selectedCredential?.broker_type;
+    if (!brokerType) { setTradingPairs([]); setBrokerInfo(null); return; }
+    listTradingPairs(brokerType)
+      .then(setTradingPairs)
+      .catch(() => setTradingPairs([]));
+    getBrokerInfo(brokerType)
+      .then(setBrokerInfo)
+      .catch(() => setBrokerInfo(null));
+  }, [selectedCredential?.broker_type]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedStrategy || !credentialId) {
+    if (!selectedStrategy || !credentialId || selectedSymbols.length === 0) {
       toast.error(t("new.validationError"));
       return;
     }
@@ -67,6 +94,7 @@ export default function NewBotPage() {
         strategy_id: selectedStrategy.id,
         credential_id: Number(credentialId),
         allocation: Number(allocation),
+        symbols: selectedSymbols,
         fence_type: fenceType,
         stop_loss_pct: Number(stopLoss),
         take_profit_pct: Number(takeProfit),
@@ -91,6 +119,48 @@ export default function NewBotPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Broker Credential — pick first so strategies filter by broker */}
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/30">
+            <h2 className="font-semibold">{t("new.brokerCredential")}</h2>
+          </div>
+          <div className="p-5">
+            {loadingCredentials ? (
+              <div className="h-10 rounded-xl glass-subtle animate-pulse" />
+            ) : credentials.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">{t("new.noCredentials")}</p>
+            ) : (
+              <Select value={credentialId} onValueChange={setCredentialId}>
+                <SelectTrigger className="h-10 w-full rounded-xl border-border/50 bg-input/50">
+                  <SelectValue placeholder={t("new.selectCredential")} />
+                </SelectTrigger>
+                <SelectContent className="glass-strong border-border/30 rounded-xl">
+                  {credentials.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.label} ({c.broker_type} / {c.environment})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+
+        {/* Broker Info Banner */}
+        {brokerInfo && (
+          <div className="glass rounded-2xl overflow-hidden border-l-4 border-l-primary/50">
+            <div className="px-5 py-3 flex items-center gap-3 text-sm">
+              <Shield className="h-4 w-4 text-primary shrink-0" />
+              <div>
+                <span className="text-muted-foreground">{t("new.minOrderSize")}:</span>{" "}
+                <span className="font-semibold">${brokerInfo.min_order_usd} {brokerInfo.currency}</span>
+                <span className="text-muted-foreground ml-3">·</span>
+                <span className="text-muted-foreground ml-3 text-xs">{brokerInfo.notes}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Strategy Selector */}
         <div className="glass rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border/30">
@@ -150,8 +220,11 @@ export default function NewBotPage() {
                           {s.risk_level}
                         </span>
                         <span>{s.recommended_timeframe}</span>
+                        <Badge variant="secondary" className="text-[8px] capitalize ml-auto">
+                          {s.asset_optimization}
+                        </Badge>
                         {s.stats.total_trades > 0 && (
-                          <span className="ml-auto">{s.stats.total_trades} trades</span>
+                          <span>{s.stats.total_trades} trades</span>
                         )}
                       </div>
                     </button>
@@ -161,6 +234,51 @@ export default function NewBotPage() {
             )}
           </div>
         </div>
+
+        {/* Symbol Selector */}
+        {selectedCredential && tradingPairs.length > 0 && (
+          <div className="glass rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/30">
+              <h2 className="font-semibold">{t("new.tradingPairs")}</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {t("new.selectPairs")}
+                {selectedSymbols.length > 0 && (
+                  <span className="ml-2 text-primary font-medium">
+                    {selectedSymbols.length} {t("new.selected")}
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="p-4">
+              <div className="flex flex-wrap gap-2">
+                {tradingPairs.map((pair) => {
+                  const isSelected = selectedSymbols.includes(pair.symbol);
+                  return (
+                    <button
+                      key={pair.symbol}
+                      type="button"
+                      onClick={() =>
+                        setSelectedSymbols((prev) =>
+                          isSelected
+                            ? prev.filter((s) => s !== pair.symbol)
+                            : [...prev, pair.symbol]
+                        )
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground"
+                          : "glass-subtle hover:bg-accent/30"
+                      }`}
+                    >
+                      <span className="font-medium">{pair.symbol}</span>
+                      <span className="ml-1 text-[10px] opacity-70">{pair.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bot Configuration */}
         <div className="glass rounded-2xl overflow-hidden">
@@ -179,27 +297,6 @@ export default function NewBotPage() {
                   pattern="^[a-zA-Z0-9_-]+$"
                   className="h-10 bg-input/50 border-border/50 rounded-xl"
                 />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">{t("new.brokerCredential")}</Label>
-                {loadingCredentials ? (
-                  <div className="h-10 rounded-xl glass-subtle animate-pulse" />
-                ) : credentials.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-2">{t("new.noCredentials")}</p>
-                ) : (
-                  <Select value={credentialId} onValueChange={setCredentialId}>
-                    <SelectTrigger className="h-10 w-full rounded-xl border-border/50 bg-input/50">
-                      <SelectValue placeholder={t("new.selectCredential")} />
-                    </SelectTrigger>
-                    <SelectContent className="glass-strong border-border/30 rounded-xl">
-                      {credentials.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.label} ({c.broker_type} / {c.environment})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">{t("new.capitalAllocation")}</Label>
@@ -273,7 +370,7 @@ export default function NewBotPage() {
               <Button
                 type="submit"
                 className="rounded-xl glow-accent"
-                disabled={submitting || !name || !selectedStrategy || !credentialId}
+                disabled={submitting || !name || !selectedStrategy || !credentialId || selectedSymbols.length === 0}
               >
                 {submitting ? t("new.creating") : t("new.create")}
               </Button>

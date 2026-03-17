@@ -3,19 +3,27 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { StrategyCardSkeleton } from "@/components/skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listStrategies, type Strategy } from "@/lib/api";
 import { ProgressRing } from "@/components/charts/progress-ring";
 import {
   TrendingUp, Activity, BarChart3, Shield, ShieldAlert, ShieldCheck,
-  Clock, Zap, ArrowUpDown, Flame, Trophy,
+  Clock, Zap, ArrowUpDown, Flame, Trophy, Search,
 } from "lucide-react";
 
 const CATEGORY_ICONS: Record<string, typeof TrendingUp> = {
   "trend-following": TrendingUp,
   "mean-reversion": ArrowUpDown,
   momentum: Zap,
+};
+
+const OPTIMIZATION_LABELS: Record<string, string> = {
+  all: "All",
+  generic: "Generic",
+  crypto: "Crypto",
+  stocks: "Stocks",
 };
 
 function getRiskConfig(t: (key: string) => string) {
@@ -30,7 +38,9 @@ export default function StrategiesPage() {
   const t = useTranslations("strategies");
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [optimizationFilter, setOptimizationFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     listStrategies()
@@ -40,7 +50,23 @@ export default function StrategiesPage() {
   }, []);
 
   const categories = ["all", ...new Set(strategies.map((s) => s.category))];
-  const filtered = filter === "all" ? strategies : strategies.filter((s) => s.category === filter);
+  const optimizations = ["all", ...new Set(strategies.map((s) => s.asset_optimization))];
+
+  const filtered = strategies.filter((s) => {
+    if (categoryFilter !== "all" && s.category !== categoryFilter) return false;
+    if (optimizationFilter !== "all" && s.asset_optimization !== optimizationFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        s.name.toLowerCase().includes(q) ||
+        s.short_description.toLowerCase().includes(q) ||
+        s.indicators.some((i) => i.toLowerCase().includes(q)) ||
+        s.category.toLowerCase().includes(q) ||
+        s.asset_optimization.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   // Sort: sigma series first, then by target_win_rate descending
   const sorted = [...filtered].sort((a, b) => {
@@ -79,28 +105,63 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* Category filters */}
-      <div className="flex gap-2 flex-wrap">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat)}
-            className={`px-3 py-1.5 text-sm rounded-xl transition-colors ${
-              filter === cat
-                ? "bg-primary text-primary-foreground"
-                : "glass-subtle text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {cat === "all" ? t("all") : cat.replace("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-          </button>
-        ))}
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={t("searchPlaceholder")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-9 pl-9 bg-input/50 border-border/50 rounded-xl text-sm"
+        />
+      </div>
+
+      {/* Filters row */}
+      <div className="flex flex-wrap gap-4">
+        {/* Category filters */}
+        <div className="flex gap-2 flex-wrap">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-3 py-1.5 text-sm rounded-xl transition-colors ${
+                categoryFilter === cat
+                  ? "bg-primary text-primary-foreground"
+                  : "glass-subtle text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {cat === "all" ? t("all") : cat.replace("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+
+        {/* Optimization filter */}
+        <div className="flex gap-2 flex-wrap border-l border-border/30 pl-4">
+          {optimizations.map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setOptimizationFilter(opt)}
+              className={`px-3 py-1.5 text-sm rounded-xl transition-colors ${
+                optimizationFilter === opt
+                  ? "bg-accent text-accent-foreground"
+                  : "glass-subtle text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {OPTIMIZATION_LABELS[opt] || opt.charAt(0).toUpperCase() + opt.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Strategy cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {sorted.map((strategy) => (
-          <StrategyCard key={strategy.id} strategy={strategy} t={t} />
-        ))}
+        {sorted.length === 0 ? (
+          <p className="text-muted-foreground col-span-full text-center py-8">{t("noStrategies")}</p>
+        ) : (
+          sorted.map((strategy) => (
+            <StrategyCard key={strategy.id} strategy={strategy} t={t} />
+          ))
+        )}
       </div>
     </div>
   );
@@ -152,6 +213,9 @@ function StrategyCard({ strategy, t }: { strategy: Strategy; t: (key: string) =>
         {strategy.long_only && (
           <Badge variant="secondary" className="text-[10px]">{t("longOnly")}</Badge>
         )}
+        <Badge variant="secondary" className="text-[10px] capitalize">
+          {strategy.asset_optimization}
+        </Badge>
       </div>
 
       {/* Indicators */}

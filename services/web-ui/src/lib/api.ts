@@ -262,6 +262,7 @@ export async function createBot(data: {
   strategy_id: string;
   credential_id: number;
   allocation: number;
+  symbols: string[];
   fence_type?: string;
   fence_overage_pct?: number;
   stop_loss_pct?: number;
@@ -485,17 +486,40 @@ export interface Strategy {
   recommended_timeframe: string;
   indicators: string[];
   asset_classes: string[];
+  asset_optimization: string;
   long_only: boolean;
   series?: string;
   stats: StrategyStats;
 }
 
-export async function listStrategies(): Promise<Strategy[]> {
-  return request("/api/strategies/");
+export async function listStrategies(brokerType?: string): Promise<Strategy[]> {
+  const params = brokerType ? `?broker_type=${brokerType}` : "";
+  return request(`/api/strategies/${params}`);
 }
 
 export async function getStrategy(strategyId: string): Promise<Strategy> {
   return request(`/api/strategies/${strategyId}`);
+}
+
+export interface TradingPair {
+  symbol: string;
+  name: string;
+  quote: string;
+}
+
+export async function listTradingPairs(brokerType: string): Promise<TradingPair[]> {
+  return request(`/api/strategies/trading-pairs/${brokerType}`);
+}
+
+export interface BrokerInfo {
+  broker_type: string;
+  min_order_usd: number;
+  currency: string;
+  notes: string;
+}
+
+export async function getBrokerInfo(brokerType: string): Promise<BrokerInfo> {
+  return request(`/api/strategies/broker-info/${brokerType}`);
 }
 
 // ---- Portfolio ----

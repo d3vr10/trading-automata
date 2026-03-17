@@ -69,6 +69,7 @@ class BotConfiguration(Base):
     trailing_stop_pct = Column(Float, nullable=False, server_default="1.5")
     trailing_activation_pct = Column(Float, nullable=False, server_default="1.0")
     take_profit_targets = Column(JSON, nullable=True)  # [{"pct": 3.0, "quantity_pct": 0.5}, ...]
+    symbols = Column(JSON, nullable=True)  # ["BTC", "ETH"] — trading pairs selected by user
     is_active = Column(Boolean, server_default="false")
     desired_state = Column(String(20), nullable=False, server_default="stopped")  # stopped, running, paused
     created_at = Column(DateTime, server_default=func.now())

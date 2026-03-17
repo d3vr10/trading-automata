@@ -210,15 +210,20 @@ def _fetch_from_yfinance(symbol: str, num_bars: int = 100) -> List[Bar]:
         return []
 
     try:
-        logger.info(f"Fetching {num_bars} bars for {symbol} from Yahoo Finance...")
+        # Crypto symbols need -USD suffix for Yahoo Finance (e.g., BTC -> BTC-USD)
+        CRYPTO_SYMBOLS = {
+            "BTC", "ETH", "SOL", "DOGE", "ADA", "XRP", "AVAX", "DOT", "MATIC",
+            "LINK", "UNI", "ATOM", "LTC", "BCH", "NEAR", "APT", "ARB", "OP",
+            "FIL", "AAVE", "MKR", "CRV", "SHIB", "PEPE", "SUI", "SEI",
+        }
+        yf_symbol = f"{symbol}-USD" if symbol.upper() in CRYPTO_SYMBOLS and "-" not in symbol else symbol
+        logger.info(f"Fetching {num_bars} bars for {symbol} from Yahoo Finance (ticker: {yf_symbol})...")
 
-        # Download 1 year of daily data (more reliable than hourly)
-        # Daily bars are more stable and don't require SIP subscription
-        logger.info(f"Downloading 1 year of daily bars for {symbol}...")
+        logger.info(f"Downloading 1 year of daily bars for {yf_symbol}...")
         logger.debug(f"yfinance version: {yf.__version__ if hasattr(yf, '__version__') else 'unknown'}")
 
         data = yf.download(
-            symbol,
+            yf_symbol,
             period="1y",
             interval="1d",  # Daily bars instead of hourly (more reliable)
             progress=False,

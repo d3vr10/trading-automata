@@ -79,6 +79,7 @@
     "winRateLabel": "Tasa de Éxito",
     "totalPnl": "P&L Total",
     "activePositions": "Posiciones Activas",
+    "searchPlaceholder": "Buscar estrategias...",
     "noStrategies": "No se encontraron estrategias",
     "riskLow": "Riesgo Bajo",
     "riskMedium": "Riesgo Medio",
@@ -189,7 +190,11 @@
       "create": "Crear Bot",
       "creating": "Creando...",
       "cancel": "Cancelar",
-      "validationError": "Selecciona una estrategia y una credencial de bróker",
+      "tradingPairs": "Pares de Trading",
+      "selectPairs": "Selecciona los activos con los que operará el bot",
+      "selected": "seleccionados",
+      "minOrderSize": "Tamaño mín. de orden",
+      "validationError": "Selecciona una estrategia, credencial de bróker y al menos un par de trading",
       "botCreated": "Bot ''{name}'' creado exitosamente"
     }
   },

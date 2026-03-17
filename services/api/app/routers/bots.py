@@ -20,8 +20,17 @@ from app.services import bot_service, trade_service
 from app.metrics import bot_commands_total
 from app.services.audit_service import log_action
 from app.services.credential_service import decrypt_credential
+from app.services.strategy_service import _CATALOG_BY_ID
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
+
+
+def _resolve_class_name(strategy_id: str) -> str:
+    """Resolve strategy_id to its engine class_name."""
+    entry = _CATALOG_BY_ID.get(strategy_id)
+    if not entry:
+        raise ValueError(f"Unknown strategy_id: {strategy_id}")
+    return entry["class_name"]
 
 
 # ---- Schemas ----
@@ -49,6 +58,7 @@ class BotConfigResponse(BaseModel):
     trailing_stop_pct: float
     trailing_activation_pct: float
     take_profit_targets: Optional[list[TakeProfitTarget]]
+    symbols: Optional[list[str]]
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -58,6 +68,7 @@ class CreateBotRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
     strategy_id: str
     credential_id: int
+    symbols: list[str] = Field(..., min_length=1)
     allocation: float = Field(..., gt=0)
     fence_type: str = Field(default="hard")
     fence_overage_pct: float = Field(default=0.0, ge=0)
@@ -124,6 +135,7 @@ def _to_response(bot: BotConfiguration, cred: BrokerCredential) -> BotConfigResp
         trailing_stop_pct=bot.trailing_stop_pct,
         trailing_activation_pct=bot.trailing_activation_pct,
         take_profit_targets=tp_targets,
+        symbols=bot.symbols,
         is_active=bot.is_active,
     )
 
@@ -194,6 +206,7 @@ async def create_bot(
         name=body.name,
         strategy_id=body.strategy_id,
         credential_id=body.credential_id,
+        symbols=body.symbols,
         allocation=body.allocation,
         fence_type=body.fence_type,
         fence_overage_pct=body.fence_overage_pct,
@@ -344,6 +357,7 @@ class BotRecoveryItem(BaseModel):
     bot_name: str
     desired_state: str  # 'running' or 'paused'
     strategy_id: str
+    strategy_class_name: str
     broker_type: str
     environment: str
     api_key: str
@@ -360,6 +374,7 @@ class BotRecoveryItem(BaseModel):
     trailing_stop_pct: float = 1.5
     trailing_activation_pct: float = 1.0
     take_profit_targets: Optional[list[dict]] = None
+    symbols: Optional[list[str]] = None
 
 
 @router.get("/recovery/pending", response_model=list[BotRecoveryItem])
@@ -387,6 +402,7 @@ async def get_recovery_pending(
             bot_name=bot.name,
             desired_state=bot.desired_state,
             strategy_id=bot.strategy_id,
+            strategy_class_name=_resolve_class_name(bot.strategy_id),
             broker_type=cred.broker_type,
             environment=cred.environment,
             api_key=decrypt_credential(cred.encrypted_api_key),
@@ -403,6 +419,7 @@ async def get_recovery_pending(
             trailing_stop_pct=bot.trailing_stop_pct,
             trailing_activation_pct=bot.trailing_activation_pct,
             take_profit_targets=bot.take_profit_targets,
+            symbols=bot.symbols,
         ))
 
     return items
@@ -659,6 +676,8 @@ async def start_bot(
             user_id=current_user.id,
             config={
                 "strategy_id": bot.strategy_id,
+                "strategy_class_name": _resolve_class_name(bot.strategy_id),
+                "symbols": bot.symbols or [],
                 "broker_type": cred.broker_type,
                 "environment": cred.environment,
                 "api_key": decrypt_credential(cred.encrypted_api_key),

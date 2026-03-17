@@ -123,10 +123,12 @@ class VirtualPortfolioManager:
         if not self._real_pm.can_execute_signal(signal):
             return False
 
-        # Get current price for cost estimation
+        # Get current price for cost estimation (positions cache → signal metadata)
         current_price = self._get_cached_price(signal.symbol)
         if not current_price:
-            self.logger.warning(f"Cannot estimate cost for {signal.symbol} - no current price cached")
+            current_price = float(signal.metadata.get('price', 0))
+        if not current_price:
+            self.logger.warning(f"Cannot estimate cost for {signal.symbol} - no price available")
             return False
 
         # Estimate order cost
@@ -209,7 +211,7 @@ class VirtualPortfolioManager:
             return None
 
         # Apply risk controls
-        current_price = self._get_cached_price(signal.symbol)
+        current_price = self._get_cached_price(signal.symbol) or float(signal.metadata.get('price', 0))
         if current_price:
             signal = self.apply_risk_controls(signal, Decimal(str(current_price)))
         else:

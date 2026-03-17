@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
@@ -40,6 +41,8 @@ class CoinbaseBroker(IBroker):
 
     # Cache spot prices for 10 seconds to avoid hammering rate limits
     _PRICE_CACHE_TTL = 10
+    # Coinbase minimum notional order value in USD
+    MIN_ORDER_NOTIONAL_USD = Decimal('5')
 
     def __init__(self, api_key: str, secret_key: str, passphrase: str = "", environment: Environment = Environment.LIVE):
         if RESTClient is None:
@@ -82,8 +85,18 @@ class CoinbaseBroker(IBroker):
             return True
 
         except Exception as e:
-            logger.error(f"Failed to connect to Coinbase: {e}")
-            self._last_connect_error = str(e)
+            error_str = str(e)
+            # Coinbase/Cloudflare sometimes returns full HTML pages instead
+            # of JSON — don't dump thousands of CSS lines into the log.
+            if "<html" in error_str.lower() or "<!doctype" in error_str.lower():
+                error_str = (
+                    "Coinbase returned an HTML error page instead of JSON. "
+                    "This usually means: (1) Coinbase API is temporarily down, "
+                    "(2) Cloudflare is blocking requests from this IP, or "
+                    "(3) the API key lacks required permissions (needs 'View' access)."
+                )
+            logger.error(f"Failed to connect to Coinbase: {error_str}")
+            self._last_connect_error = error_str
             self._connected = False
             return False
 
@@ -274,6 +287,24 @@ class CoinbaseBroker(IBroker):
             if tif not in ('GTC', 'IOC', 'FOK'):
                 tif = 'GTC'
 
+            # Pre-validate minimum order size ($5 notional on Coinbase)
+            if order_type.lower() == 'market':
+                spot = Decimal(str(self._get_spot_price(product_id.split('-')[0])))
+                notional = qty * spot
+            elif limit_price is not None:
+                notional = qty * Decimal(str(limit_price))
+            elif stop_price is not None:
+                notional = qty * Decimal(str(stop_price))
+            else:
+                notional = None
+
+            if notional is not None and notional < self.MIN_ORDER_NOTIONAL_USD:
+                raise ValueError(
+                    f"Order too small: ${notional:.2f} notional is below "
+                    f"Coinbase minimum of ${self.MIN_ORDER_NOTIONAL_USD}. "
+                    f"Increase quantity or price."
+                )
+
             # Build order configuration
             order_config: Dict[str, Any] = {}
 
@@ -342,13 +373,25 @@ class CoinbaseBroker(IBroker):
 
             # Submit order
             response = self.client.create_order(
-                client_order_id=kwargs.get('client_order_id'),
+                client_order_id=kwargs.get('client_order_id') or str(uuid.uuid4()),
                 product_id=product_id,
-                side=side_lower,
+                side=side_lower.upper(),
                 order_configuration=order_config,
             )
 
-            order_id = _g(_g(response, 'success_response'), 'order_id') or _g(response, 'order_id')
+            # Check if order was rejected by Coinbase
+            if _g(response, 'success') is False:
+                err = _g(response, 'error_response') or {}
+                err_msg = _g(err, 'message') or _g(err, 'error') or 'unknown'
+                preview = _g(err, 'preview_failure_reason') or ''
+                raise RuntimeError(
+                    f"Order rejected by Coinbase: {err_msg}"
+                    + (f" ({preview})" if preview else "")
+                )
+
+            # Extract order_id from success_response
+            sr = _g(response, 'success_response')
+            order_id = _g(sr, 'order_id') or _g(response, 'order_id')
 
             logger.info(
                 f"Order submitted: {order_id} - {side} {qty} {product_id} "

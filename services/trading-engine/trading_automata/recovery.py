@@ -81,6 +81,8 @@ def build_bot_config_from_recovery(recovery_item: Dict[str, Any]) -> tuple[Dict[
         "trade_frequency": {
             "poll_interval_minutes": recovery_item["poll_interval_minutes"],
         },
+        "symbols": recovery_item.get("symbols", []),
+        "strategy_class_name": recovery_item.get("strategy_class_name", ""),
         "strategy_config": "config/strategies.yaml",
     }
 

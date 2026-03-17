@@ -164,7 +164,9 @@ class BotConfig(BaseModel):
     fence: FenceConfig = Field(default_factory=FenceConfig, description="Virtual fence config")
     risk: RiskConfig = Field(default_factory=RiskConfig, description="Risk management config")
     trade_frequency: TradeFrequencyConfig = Field(default_factory=TradeFrequencyConfig, description="Trade frequency config")
-    strategy_config: str = Field(default="config/strategies.yaml", description="Path to strategy config YAML")
+    symbols: list[str] = Field(default_factory=list, description="Trading symbols selected by user (e.g., ['BTC', 'ETH'])")
+    strategy_class_name: str = Field(default="", description="Strategy class name (e.g., 'SigmaSeriesAlphaBullCryptoStrategy')")
+    strategy_config: str = Field(default="config/strategies.yaml", description="Path to strategy config YAML (fallback)")
     data_provider: DataProviderConfig = Field(default_factory=DataProviderConfig, description="Data provider config")
 
     @field_validator('name')

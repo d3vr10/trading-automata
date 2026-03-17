@@ -32,6 +32,31 @@ _GRANULARITY_MAP = {
 }
 
 
+def _g(obj, key, default=None):
+    """Safely get a value from a dict or SDK response object."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        val = obj[key]
+        return val if val is not None else default
+    except (KeyError, TypeError, IndexError):
+        return default
+
+
+def _parse_candles(response):
+    """Extract candle list from SDK response (handles dict, list, or object)."""
+    if isinstance(response, dict):
+        return response.get("candles", [])
+    if isinstance(response, list):
+        return response
+    if hasattr(response, "candles"):
+        candles = response.candles
+        return list(candles) if candles else []
+    return []
+
+
 class CoinbaseDataProvider(IDataProvider):
     """Coinbase data provider for crypto market data.
 
@@ -109,19 +134,18 @@ class CoinbaseDataProvider(IDataProvider):
                 granularity=granularity,
             )
 
-            candles = response.get("candles", []) if isinstance(response, dict) else response
+            candles = _parse_candles(response)
             bars = []
             for candle in candles:
-                # Coinbase candle format: {start, low, high, open, close, volume}
-                ts = int(candle.get("start", 0))
+                ts = int(_g(candle, "start", 0))
                 bars.append(Bar(
                     symbol=symbol,
                     timestamp=datetime.fromtimestamp(ts),
-                    open=Decimal(str(candle.get("open", 0))),
-                    high=Decimal(str(candle.get("high", 0))),
-                    low=Decimal(str(candle.get("low", 0))),
-                    close=Decimal(str(candle.get("close", 0))),
-                    volume=int(float(candle.get("volume", 0))),
+                    open=Decimal(str(_g(candle, "open", 0))),
+                    high=Decimal(str(_g(candle, "high", 0))),
+                    low=Decimal(str(_g(candle, "low", 0))),
+                    close=Decimal(str(_g(candle, "close", 0))),
+                    volume=int(float(_g(candle, "volume", 0))),
                 ))
 
             bars.sort(key=lambda b: b.timestamp)
@@ -138,7 +162,6 @@ class CoinbaseDataProvider(IDataProvider):
 
         product_id = self._normalize_symbol(symbol)
         try:
-            # Get last candle using a short time window
             response = self.client.get_candles(
                 product_id=product_id,
                 start=str(int(datetime.now().timestamp()) - 86400),
@@ -146,20 +169,20 @@ class CoinbaseDataProvider(IDataProvider):
                 granularity="ONE_DAY",
             )
 
-            candles = response.get("candles", []) if isinstance(response, dict) else response
+            candles = _parse_candles(response)
             if not candles:
                 return None
 
             candle = candles[0]  # Most recent
-            ts = int(candle.get("start", 0))
+            ts = int(_g(candle, "start", 0))
             return Bar(
                 symbol=symbol,
                 timestamp=datetime.fromtimestamp(ts),
-                open=Decimal(str(candle.get("open", 0))),
-                high=Decimal(str(candle.get("high", 0))),
-                low=Decimal(str(candle.get("low", 0))),
-                close=Decimal(str(candle.get("close", 0))),
-                volume=int(float(candle.get("volume", 0))),
+                open=Decimal(str(_g(candle, "open", 0))),
+                high=Decimal(str(_g(candle, "high", 0))),
+                low=Decimal(str(_g(candle, "low", 0))),
+                close=Decimal(str(_g(candle, "close", 0))),
+                volume=int(float(_g(candle, "volume", 0))),
             )
 
         except Exception as e:
@@ -173,10 +196,9 @@ class CoinbaseDataProvider(IDataProvider):
         product_id = self._normalize_symbol(symbol)
         try:
             ticker = self.client.get_product(product_id)
-            price = Decimal(str(ticker.get("price", 0)))
-            bid = Decimal(str(ticker.get("bid", price)))
-            ask = Decimal(str(ticker.get("ask", price)))
-            # Ensure bid <= ask
+            price = Decimal(str(_g(ticker, "price", 0)))
+            bid = Decimal(str(_g(ticker, "bid", price)))
+            ask = Decimal(str(_g(ticker, "ask", price)))
             if bid > ask:
                 bid, ask = ask, bid
 

@@ -462,6 +462,8 @@ class BotOrchestrator:
                     take_profit_pct=config.get("take_profit_pct", 6.0),
                     max_position_size=config.get("max_position_size", 0.1),
                 ),
+                symbols=config.get("symbols", []),
+                strategy_class_name=config.get("strategy_class_name", ""),
                 strategy_config="config/strategies.yaml",
             )
 

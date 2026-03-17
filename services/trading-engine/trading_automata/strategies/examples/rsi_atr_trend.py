@@ -99,7 +99,7 @@ class RSIATRTrendStrategy(BaseStrategy):
         self.price_history[bar.symbol].append(float(bar.close))
         self.high_history[bar.symbol].append(float(bar.high))
         self.low_history[bar.symbol].append(float(bar.low))
-        self.volume_history[bar.symbol].append(int(bar.volume))
+        self.volume_history[bar.symbol].append(float(bar.volume))
 
         # Need enough data for indicators
         min_required = max(self.rsi_period, self.ema_slow_period, self.atr_period) + 5
